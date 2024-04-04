@@ -1,0 +1,23 @@
+```{r}
+file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010767819?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=1&anneeFin=2024&revision=sansrevisions"
+
+local_file_name <- "data.zip"
+download.file(file_url, local_file_name, mode = "wb")
+
+file_list <- unzip(local_file_name)
+file.rename(file_list[2], "valeurs_mensuelles.csv")
+
+file.remove("data.zip")
+file_list[2] <- sub("^\\.\\/", "", file_list[2])
+file_list[2] <- sub("/valeurs_mensuelles\\.csv$", "", file_list[2]) 
+unlink(file_list[2], recursive = TRUE)
+
+rm(file_url, local_file_name, file_list)
+```
+
+```{r}
+data <- read.csv("valeurs_mensuelles.csv", sep = ";")
+data <- data[-c(1:3), -3]
+colnames(data) <- c("date", "value")
+```
+
