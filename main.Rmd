@@ -1,10 +1,12 @@
 **Pré-requis**
 
 ```{r include=FALSE}
+install.packages("fUnitRoots")
+library(fUnitRoots)
 library(zoo)
 ```
 
-**Téléchargement et préparation des données**
+**Téléchargement puis extraction des données**
 
 ```{r}
 file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010767819?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=1&anneeFin=2024&revision=sansrevisions"
@@ -23,8 +25,40 @@ unlink(file_list[2], recursive = TRUE)
 rm(file_url, local_file_name, file_list)
 ```
 
+**Conversion au format Zoo**
+
 ```{r}
 data <- read.csv("valeurs_mensuelles.csv", sep = ";")
 data <- data[-c(1:3), -3]
-colnames(data) <- c("date", "value")
+colnames(data) <- c("dates", "values")
+
+data <- data[order(data$dates), ]
+rownames(data) <- NULL
+
+data$dates <- as.yearmon(data$dates)
+data$values <- as.numeric(data$values)
+raw_series <- zoo(data$values, order.by=data$dates)
+```
+
+# Partie I : données
+
+```{r}
+plot(raw_series, main = "Undifferenciated series", xlab = "Date", ylab = "Values")
+```
+
+```{r}
+diff_series <- diff(raw_series, 1)
+plot(diff_series)
+```
+
+# Partie II : modèles ARMA
+
+```{r}
+
+```
+
+# Partie III : Prévision
+
+```{r}
+
 ```
