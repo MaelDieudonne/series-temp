@@ -3,13 +3,14 @@
 ```{r include=FALSE}
 install.packages("fUnitRoots")
 library(fUnitRoots)
+library(MASS)
 library(zoo)
 ```
 
 **Téléchargement puis extraction des données**
 
 ```{r}
-file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010767819?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=1&anneeFin=2024&revision=sansrevisions"
+file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010768319?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=2&anneeFin=2024&revision=sansrevisions"
 
 local_file_name <- "data.zip"
 download.file(file_url, local_file_name, mode = "wb")
@@ -37,19 +38,27 @@ rownames(data) <- NULL
 
 data$dates <- as.yearmon(data$dates)
 data$values <- as.numeric(data$values)
+
 raw_series <- zoo(data$values, order.by=data$dates)
 ```
 
 # Partie I : données
 
 ```{r}
-plot(raw_series, main = "Undifferenciated series", xlab = "Date", ylab = "Values")
+plot(raw_series, main = "Undifferenciated series", xlab = "Date", ylab = "Value")
 ```
 
+On observe une double tendance : croissance de la moyenne et de la variance.
+
 ```{r}
-diff_series <- diff(raw_series, 1)
-plot(diff_series)
+diff_series_1 <- diff(raw_series, 1)
+plot(diff_series_1, main = "1-differenciated series", xlab = "Date", ylab = "Value")
+
+diff_series_12 <- diff(raw_series, 12)
+plot(diff_series_12, main = "12-differenciated series", xlab = "Date", ylab = "Value")
 ```
+
+Une différenciation simple suffit à stationnariser la série.
 
 # Partie II : modèles ARMA
 
