@@ -9,11 +9,22 @@ library(zoo)
 
 **Téléchargement puis extraction des données**
 
-Première tentative avec la production d'explosifs, mais série chaotique, avec une variance croissant fortement au cours du temps.
+```{r}
+# Indice CVS-CJO de la production industrielle (base 100 en 2021) - Fabrication de produits explosifs
+file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010767819?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=2&anneeFin=2024&revision=sansrevisions"
+name <- "Fabrication de produits explosifs"
+
+# Indice CVS-CJO de la production industrielle (base 100 en 2021) - Industrie pharmaceutique 
+file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010767832?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=2&anneeFin=2024&revision=sansrevisions"
+name <- "Industrie pharmaceutique"
+
+# Indice CVS-CJO de la production industrielle (base 100 en 2021) - Fabrication de piles et d'accumulateurs électriques
+file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010768055?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=2&anneeFin=2024&revision=sansrevisions"
+name <- "Fabrication de piles et d'accumulateurs électriques"
+```
+
 
 ```{r}
-file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010767819?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=2&anneeFin=2024&revision=sansrevisions"
-
 local_file_name <- "data.zip"
 download.file(file_url, local_file_name, mode = "wb")
 
@@ -47,45 +58,24 @@ raw_series <- zoo(data$values, order.by=data$dates)
 # Partie I : données
 
 ```{r}
-plot(raw_series, main = "Undifferenciated series", xlab = "Date", ylab = "Value")
+plot(raw_series, main = paste(name, "(undifferenciated)"), xlab = "Date", ylab = "Value")
+plot(decompose(raw_series))
 ```
 
 On observe une double tendance : croissance de la moyenne et de la variance.
 
 ```{r}
 diff_series <- diff(raw_series, 1)
-plot(diff_series, main = "1-differenciated series", xlab = "Date", ylab = "Value")
+plot(diff_series, main = paste(name, "(1-differenciated)"), xlab = "Date", ylab = "Value")
 ```
 
-Une différenciation simple suffit à stabiliser la moyenne, mais pas la variance. Pas d'autre choix qu'une transformation Box-Cox ?
-
-```{r}
-lambda_seq <- seq(-2, 2, by = 0.2)
-boxcox_result <- boxcox(raw_series ~ 1, lambda = lambda_seq)
-
-optimal_lambda <- boxcox_result$x[which.max(boxcox_result$y)]
-print(optimal_lambda)
-
-transformed_series <- if (abs(optimal_lambda) < 1e-8) log(raw_series) else (raw_series^optimal_lambda - 1) / optimal_lambda
-
-plot(transformed_series)
-
-diff_series <- diff(transformed_series, 1)
-plot(diff_series)
-```
-
-```{r}
-cube_root_series <- raw_series^(1/2)
-plot(cube_root_series)
-diff_series <- diff(cube_root_series, 1)
-plot(diff_series)
-```
-
+Une différenciation simple suffit à stationnariser la série.
 
 # Partie II : modèles ARMA
 
 ```{r}
-
+acf(diff_series_1, main = paste(name, "(ACF)"))
+pacf(diff_series_1, main = paste(name, "(partial ACF)"))
 ```
 
 # Partie III : Prévision
