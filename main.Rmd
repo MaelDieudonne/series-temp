@@ -1,18 +1,24 @@
 **Pré-requis**
 
-```{r include=FALSE}
+```{r eval=FALSE, include=FALSE}
+install.packages("forecast")
 install.packages("fUnitRoots")
+library(aTSA)
 library(fUnitRoots)
+library(forecast)
 library(MASS)
-library(zoo)
+library(xts)
 ```
 
 **Téléchargement puis extraction des données**
 
-```{r}
+Séries testées
+
+```{r eval=FALSE, include=FALSE}
 # Indice CVS-CJO de la production industrielle (base 100 en 2021) - Fabrication de produits explosifs
 file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010767819?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=2&anneeFin=2024&revision=sansrevisions"
 name <- "Fabrication de produits explosifs"
+## Donne un peu n'importe quoi...
 
 # Indice CVS-CJO de la production industrielle (base 100 en 2021) - Industrie pharmaceutique 
 file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010767832?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=2&anneeFin=2024&revision=sansrevisions"
@@ -21,12 +27,34 @@ name <- "Industrie pharmaceutique"
 # Indice CVS-CJO de la production industrielle (base 100 en 2021) - Fabrication de piles et d'accumulateurs électriques
 file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010768055?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=2&anneeFin=2024&revision=sansrevisions"
 name <- "Fabrication de piles et d'accumulateurs électriques"
+## Donne un ARIMA(0,1,0) donc un bruit blanc ?
+
+# Indice CVS-CJO de la production industrielle (base 100 en 2021) - Extraction de pierres, de sables et d'argiles
+file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010767592?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=2&anneeFin=2024&revision=sansrevisions"
+name <- "Extraction de pierres, de sables et d'argiles"
+## Difficile à stationnariser, ne marche pas trop mal ensuite ?
+
+# Indice CVS-CJO de la production industrielle (base 100 en 2021) - Fabrication d'articles en papier à usage sanitaire ou domestique
+file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010767768?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=2&anneeFin=2024&revision=sansrevisions"
+name <- "Fabrication d'articles en papier à usage sanitaire ou domestique"
+
+# Indice CVS-CJO de la production industrielle (base 100 en 2021) - Fabrication de caoutchouc synthétique
+file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010767799?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=2&anneeFin=2024&revision=sansrevisions"
+name <-"Fabrication de caoutchouc synthétique"
+## Déjà stationnaire
 ```
 
+Série en cours
+
+```{r}
+# Indice CVS-CJO de la production industrielle (base 100 en 2021) - Fabrication de pesticides et d'autres produits agrochimiques
+file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010767801?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=2&anneeFin=2024&revision=sansrevisions"
+name <- "Fabrication de pesticides et d'autres produits agrochimiques"
+```
 
 ```{r}
 local_file_name <- "data.zip"
-download.file(file_url, local_file_name, mode = "wb")
+download.file(file_url, local_file_name, mode = "wb", quiet = TRUE)
 
 file_list <- unzip(local_file_name)
 file.rename(file_list[2], "valeurs_mensuelles.csv")
@@ -55,31 +83,163 @@ data$values <- as.numeric(data$values)
 raw_series <- zoo(data$values, order.by=data$dates)
 ```
 
-# Partie I : données
+**Ou : série simulée pour tester**
 
 ```{r}
-plot(raw_series, main = paste(name, "(undifferenciated)"), xlab = "Date", ylab = "Value")
+# Pour tester
+raw_series <- arima.sim(model = list(order = c(3, 2, 3), ar = c(0.3, -0.2, 0.1), ma = c(0.2, -0.1, 0.3)), n = 400)
+dates <- as.yearmon(seq(from=1990+0/12, length.out = 402, by=1/12))
+raw_series <- zoo(raw_series, order.by = dates)
+```
+
+# Partie I : données
+
+## 1. Recherche d'une tendance
+
+Représentation de la série brute pour repérer constante et tendance éventuelles.
+
+```{r}
+# plot(raw_series, main = paste(name, "(non-différenciée)"), xlab = "Dates", ylab = "Valeurs")
 plot(decompose(raw_series))
 ```
 
-On observe une double tendance : croissance de la moyenne et de la variance.
+Régression pour objectiver constance et tendance .
+
+```{r}
+summary(lm(coredata(raw_series) ~ index(raw_series)))
+```
+
+Test de stationnarité : ADF de type ct si on a identifié une constante et un trend, pour les lags de 0 à 24.
+
+```{r}
+Qtests <- function(series, k, fitdf = 0) {
+  pvals <- apply(matrix(1:k), 1, FUN = function(l) {
+    pval <- if (l <= fitdf) NA else Box.test(series, lag = l, type = "Ljung-Box", fitdf = fitdf)$p.value
+    return(c("lag" = l,"pval" = pval))
+  })
+  return(t(pvals))
+}
+
+adfTest_valid <- function(series, kmax, adftype){
+  k <- 0
+  noautocorr <- 0
+  while (noautocorr == 0){
+    cat(paste0("ADF with ", k," lags: residuals OK? "))
+    adf <- adfTest(series, lags = k, type = adftype)
+    pvals <- Qtests(adf@test$lm$residuals, 24, fitdf = length(adf@test$lm$coefficients))[,2]
+    if (sum(pvals<0.05, na.rm=T) == 0) {
+      noautocorr <- 1; cat("Yep \n")
+    } else cat("Nope \n")
+    k <- k+1
+  }
+  return(adf)
+}
+
+adf <- adfTest_valid(raw_series, 24, adftype="ct")
+adf
+```
+
+Alternative : le package aTSA permet de réaliser directement ce test, ainsi qu'un Perron-Phillips et un KPSS.
+
+```{r eval=FALSE}
+adf.test(coredata(raw_series), nlag = 24, output = TRUE)
+pp.test(coredata(raw_series), lag.short = TRUE, output = TRUE)
+kpss.test(coredata(raw_series), lag.short = TRUE, output = TRUE)
+```
+
+## 2. Différenciation
+
+On commence par différencier la série à l'ordre 1.
 
 ```{r}
 diff_series <- diff(raw_series, 1)
-plot(diff_series, main = paste(name, "(1-differenciated)"), xlab = "Date", ylab = "Value")
+
+# plot(diff_series, main = paste(name, "(différenciée à l'ordre 1)"), xlab = "Dates", ylab = "Valeurs")
+plot(decompose(diff_series))
 ```
 
-Une différenciation simple suffit à stationnariser la série.
+Régression pour vérifier si la tendance est éliminée.
+
+```{r}
+summary(lm(coredata(diff_series) ~ index(diff_series)))
+```
+
+Test de stationnarité.
+
+```{r}
+adf <- adfTest_valid(diff_series, 24, "nc")
+adf
+```
 
 # Partie II : modèles ARMA
 
+On représente les autocorrélations partielles et totales.
+
 ```{r}
-acf(diff_series_1, main = paste(name, "(ACF)"))
-pacf(diff_series_1, main = paste(name, "(partial ACF)"))
+acf(diff_series, main = paste(name))
+pacf(diff_series, main = paste(name))
+```
+
+MA(q) = ACF
+
+AR(p) = pACF
+
+On retient q\<=2 et p\<=5 et on teste tous les modèles possibles.
+
+```{r}
+pmax <- 5
+qmax <- 2
+mat <- matrix(NA, nrow=pmax+1,ncol=qmax+1) # matrice vide à remplir
+rownames(mat) <- paste0("p=",0:pmax) # renomme les lignes
+colnames(mat) <- paste0("q=",0:qmax) # renomme les colonnes
+AICs <- mat # matrice des AIC non remplie
+BICs <- mat # matrice des BIC non remplie
+
+pqs <- expand.grid(0:pmax,0:qmax) # toutes les combinaisons possibles de p et q
+for (row in 1:dim(pqs)[1]){ # boucle pour chaque (p,q)
+  p <- pqs[row,1] # récupère p
+  q <- pqs[row,2] # récupère q
+  estim <- try(arima(raw_series,c(p,1,q),include.mean = F)) # tente d’estimer l’ARIMA
+  AICs[p+1,q+1] <- if (class(estim)=="try-error") NA else estim$aic # assigne l’AIC
+  BICs[p+1,q+1] <- if (class(estim)=="try-error") NA else BIC(estim) # assigne le BIC
+}
+
+AICs # affiche les AICs
+AICs==min(AICs) # affiche le modèle minimisant l’AIC
+
+BICs # affiche les BICs
+BICs==min(BICs) # affiche le modèle minimisant le BIC
+
+arima010 <- arima(raw_series,c(0,1,2),include.mean=F)
+```
+
+Test d'ajustement : on vérifie si le rapport entre les coefficients estimés et leur se est \>1.96.
+
+```{r}
+arima010
+```
+
+Test de validité : on vérifie l'autocorrélation des résidus.
+
+```{r}
+Qtests(arima010$residuals,24,fitdf=3)
 ```
 
 # Partie III : Prévision
 
 ```{r}
+adj_r2 <- function(model) {
+  ss_res <- sum(model$residuals^2) # somme des résidus au carré
+  p <- model$arma[1] # récupère l’ordre AR
+  q <- model$arma[2] # récupère l’ordre MA
+  ss_tot <- sum(raw_series[-c(1:max(p,q))]^2) # somme des observations de l’échantillon au carré
+  n <- model$nobs-max(p,q) # taille de l’échantillon
+  adj_r2 <- 1-(ss_res/(n-p-q-1))/(ss_tot/(n-1)) # r2 ajusté
+  return(adj_r2)
+}
 
+adj_r2(arima010)
+
+plot(arima010$residuals)
+#axis(side=1,2001+11/12) # ajoute une légende pour décembre 200
 ```
