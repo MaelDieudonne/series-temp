@@ -1,58 +1,23 @@
 **Pré-requis**
 
-```{r eval=FALSE, include=FALSE}
-install.packages("forecast")
-install.packages("fUnitRoots")
-library(aTSA)
-library(fUnitRoots)
-library(forecast)
-library(MASS)
-library(xts)
+```{r include=FALSE}
+packages <- c("astsa", "aTSA", "forecast", "fUnitRoots", "MASS", "xts")
+installed_packages <- packages %in% rownames(installed.packages())
+
+if (any(installed_packages == FALSE)) {install.packages(packages[!installed_packages])}
+invisible(lapply(packages, library, character.only = TRUE))
+
+rm(installed_packages, packages)
 ```
 
 **Téléchargement puis extraction des données**
 
-Séries testées
+Série traitée : Indice CVS-CJO de la production industrielle dans l'industrie pharmaceutique (base 100 en 2021)
 
-```{r eval=FALSE, include=FALSE}
-# Indice CVS-CJO de la production industrielle (base 100 en 2021) - Fabrication de produits explosifs
-file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010767819?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=2&anneeFin=2024&revision=sansrevisions"
-name <- "Fabrication de produits explosifs"
-## Donne un peu n'importe quoi...
-
-# Indice CVS-CJO de la production industrielle (base 100 en 2021) - Industrie pharmaceutique 
+```{r include=FALSE}
 file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010767832?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=2&anneeFin=2024&revision=sansrevisions"
-name <- "Industrie pharmaceutique"
+name <- "Production de l'industrie pharmaceutique"
 
-# Indice CVS-CJO de la production industrielle (base 100 en 2021) - Fabrication de piles et d'accumulateurs électriques
-file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010768055?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=2&anneeFin=2024&revision=sansrevisions"
-name <- "Fabrication de piles et d'accumulateurs électriques"
-## Donne un ARIMA(0,1,0) donc un bruit blanc ?
-
-# Indice CVS-CJO de la production industrielle (base 100 en 2021) - Extraction de pierres, de sables et d'argiles
-file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010767592?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=2&anneeFin=2024&revision=sansrevisions"
-name <- "Extraction de pierres, de sables et d'argiles"
-## Difficile à stationnariser, ne marche pas trop mal ensuite ?
-
-# Indice CVS-CJO de la production industrielle (base 100 en 2021) - Fabrication d'articles en papier à usage sanitaire ou domestique
-file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010767768?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=2&anneeFin=2024&revision=sansrevisions"
-name <- "Fabrication d'articles en papier à usage sanitaire ou domestique"
-
-# Indice CVS-CJO de la production industrielle (base 100 en 2021) - Fabrication de caoutchouc synthétique
-file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010767799?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=2&anneeFin=2024&revision=sansrevisions"
-name <-"Fabrication de caoutchouc synthétique"
-## Déjà stationnaire
-```
-
-Série en cours
-
-```{r}
-# Indice CVS-CJO de la production industrielle (base 100 en 2021) - Fabrication de pesticides et d'autres produits agrochimiques
-file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010767801?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=2&anneeFin=2024&revision=sansrevisions"
-name <- "Fabrication de pesticides et d'autres produits agrochimiques"
-```
-
-```{r}
 local_file_name <- "data.zip"
 download.file(file_url, local_file_name, mode = "wb", quiet = TRUE)
 
@@ -83,112 +48,66 @@ data$values <- as.numeric(data$values)
 raw_series <- zoo(data$values, order.by=data$dates)
 ```
 
-**Ou : série simulée pour tester**
-
-```{r}
-# Pour tester
-raw_series <- arima.sim(model = list(order = c(3, 2, 3), ar = c(0.3, -0.2, 0.1), ma = c(0.2, -0.1, 0.3)), n = 400)
-dates <- as.yearmon(seq(from=1990+0/12, length.out = 402, by=1/12))
-raw_series <- zoo(raw_series, order.by = dates)
-```
-
 # Partie I : données
 
-## 1. Recherche d'une tendance
-
-Représentation de la série brute pour repérer constante et tendance éventuelles.
+## 1. Représentation de la série
 
 ```{r}
-# plot(raw_series, main = paste(name, "(non-différenciée)"), xlab = "Dates", ylab = "Valeurs")
+plot(raw_series, main = name, xlab = "Dates", ylab = "Valeurs")
 plot(decompose(raw_series))
 ```
 
-Régression pour objectiver constance et tendance .
+Trois observations : une tendance linéaire croissante, une augmentation de la variance au cours du temps, pas de saisonnalité.
+
+## 2. Stationnarisation
+
+On commence par une transformation logarithmique pour corriger l'hétéroscédasticité.
 
 ```{r}
-summary(lm(coredata(raw_series) ~ index(raw_series)))
+log_series <- log(raw_series)
+plot(decompose(log_series))
 ```
 
-Test de stationnarité : ADF de type ct si on a identifié une constante et un trend, pour les lags de 0 à 24.
+On différencie ensuite à l'ordre 1 pour éliminer la tendance.
 
 ```{r}
-Qtests <- function(series, k, fitdf = 0) {
-  pvals <- apply(matrix(1:k), 1, FUN = function(l) {
-    pval <- if (l <= fitdf) NA else Box.test(series, lag = l, type = "Ljung-Box", fitdf = fitdf)$p.value
-    return(c("lag" = l,"pval" = pval))
-  })
-  return(t(pvals))
-}
-
-adfTest_valid <- function(series, kmax, adftype){
-  k <- 0
-  noautocorr <- 0
-  while (noautocorr == 0){
-    cat(paste0("ADF with ", k," lags: residuals OK? "))
-    adf <- adfTest(series, lags = k, type = adftype)
-    pvals <- Qtests(adf@test$lm$residuals, 24, fitdf = length(adf@test$lm$coefficients))[,2]
-    if (sum(pvals<0.05, na.rm=T) == 0) {
-      noautocorr <- 1; cat("Yep \n")
-    } else cat("Nope \n")
-    k <- k+1
-  }
-  return(adf)
-}
-
-adf <- adfTest_valid(raw_series, 24, adftype="ct")
-adf
-```
-
-Alternative : le package aTSA permet de réaliser directement ce test, ainsi qu'un Perron-Phillips et un KPSS.
-
-```{r eval=FALSE}
-adf.test(coredata(raw_series), nlag = 24, output = TRUE)
-pp.test(coredata(raw_series), lag.short = TRUE, output = TRUE)
-kpss.test(coredata(raw_series), lag.short = TRUE, output = TRUE)
-```
-
-## 2. Différenciation
-
-On commence par différencier la série à l'ordre 1.
-
-```{r}
-diff_series <- diff(raw_series, 1)
-
-# plot(diff_series, main = paste(name, "(différenciée à l'ordre 1)"), xlab = "Dates", ylab = "Valeurs")
+diff_series <- diff(log_series, 1)
 plot(decompose(diff_series))
 ```
 
-Régression pour vérifier si la tendance est éliminée.
+On vérifie que le résultat convient à l'aide de tests de stationnarité : c'est bon, sauf pour le KPSS sans drift ni trend (?).
 
-```{r}
-summary(lm(coredata(diff_series) ~ index(diff_series)))
+```{r eval=FALSE}
+adf <- adf.test(coredata(diff_series), nlag = 24, output = TRUE)
+pp.test(coredata(diff_series), lag.short = TRUE, output = TRUE)
+kpss.test(coredata(diff_series), lag.short = TRUE, output = TRUE)
 ```
 
-Test de stationnarité.
+## 3. Comparaison de la série initiale et de la série transformée
 
 ```{r}
-adf <- adfTest_valid(diff_series, 24, "nc")
-adf
+# par(mfrow = c(2, 1)) # bugue...
+plot(raw_series, main = "", xlab = "Dates", ylab = "Valeurs")
+plot(diff_series, main = "", xlab = "Dates", ylab = "Valeurs")
 ```
 
-# Partie II : modèles ARMA
+# Partie II : Modèle ARMA
 
-On représente les autocorrélations partielles et totales.
+## 1. Identification des paramètres
 
 ```{r}
+# par(mfrow = c(2, 1)) # bugue...
 acf(diff_series, main = paste(name))
 pacf(diff_series, main = paste(name))
 ```
 
-MA(q) = ACF
+On retient qmax=1 et pmax = 6.
 
-AR(p) = pACF
-
-On retient q\<=2 et p\<=5 et on teste tous les modèles possibles.
+## 2. Estimation des modèles
 
 ```{r}
-pmax <- 5
-qmax <- 2
+pmax <- 6
+qmax <- 1
 mat <- matrix(NA, nrow=pmax+1,ncol=qmax+1) # matrice vide à remplir
 rownames(mat) <- paste0("p=",0:pmax) # renomme les lignes
 colnames(mat) <- paste0("q=",0:qmax) # renomme les colonnes
@@ -199,47 +118,53 @@ pqs <- expand.grid(0:pmax,0:qmax) # toutes les combinaisons possibles de p et q
 for (row in 1:dim(pqs)[1]){ # boucle pour chaque (p,q)
   p <- pqs[row,1] # récupère p
   q <- pqs[row,2] # récupère q
-  estim <- try(arima(raw_series,c(p,1,q),include.mean = F)) # tente d’estimer l’ARIMA
+  estim <- try(arima(log_series,c(p,1,q),include.mean = F)) # tente d’estimer l’ARIMA
   AICs[p+1,q+1] <- if (class(estim)=="try-error") NA else estim$aic # assigne l’AIC
   BICs[p+1,q+1] <- if (class(estim)=="try-error") NA else BIC(estim) # assigne le BIC
 }
 
 AICs # affiche les AICs
-AICs==min(AICs) # affiche le modèle minimisant l’AIC
-
 BICs # affiche les BICs
-BICs==min(BICs) # affiche le modèle minimisant le BIC
-
-arima010 <- arima(raw_series,c(0,1,2),include.mean=F)
 ```
 
-Test d'ajustement : on vérifie si le rapport entre les coefficients estimés et leur se est \>1.96.
+Le modèle minimisant l'AIC est un ARMA(4,0) mais celui minimisant le BIC est un ARMA(0,1) : logique puisque le BIC pénalise davantage la complexité.
 
 ```{r}
-arima010
+arima410 <- arima(log_series,c(4,1,0),include.mean=F)
+arima011 <- arima(log_series,c(0,1,1),include.mean=F)
 ```
 
-Test de validité : on vérifie l'autocorrélation des résidus.
+## 3. Tests de validité et d'ajustement
+
+Pour l'ajustement, on vérifie la significativité des coefficients les plus élevés : c'est bon pour les deux modèles.
 
 ```{r}
-Qtests(arima010$residuals,24,fitdf=3)
-```
-
-# Partie III : Prévision
-
-```{r}
-adj_r2 <- function(model) {
-  ss_res <- sum(model$residuals^2) # somme des résidus au carré
-  p <- model$arma[1] # récupère l’ordre AR
-  q <- model$arma[2] # récupère l’ordre MA
-  ss_tot <- sum(raw_series[-c(1:max(p,q))]^2) # somme des observations de l’échantillon au carré
-  n <- model$nobs-max(p,q) # taille de l’échantillon
-  adj_r2 <- 1-(ss_res/(n-p-q-1))/(ss_tot/(n-1)) # r2 ajusté
-  return(adj_r2)
+signif <- function(estim){
+  coef <- estim$coef
+  se <- sqrt(diag(estim$var.coef))
+  t <- coef/se
+  pval <- (1-pnorm(abs(t)))*2
+  return(rbind(coef,se,pval))
 }
 
-adj_r2(arima010)
-
-plot(arima010$residuals)
-#axis(side=1,2001+11/12) # ajoute une légende pour décembre 200
+signif(arima410)
+signif(arima011)
 ```
+
+Pour la validité, c'est-à-dire la non-autocorrélation des résidus, on utilise le test Portemanteau. Il conduit à rejeter l'ARMA(4,1).
+
+```{r}
+Qtests <- function(series, k, fitdf = 0) {
+  pvals <- apply(matrix(1:k), 1, FUN = function(l) {
+    pval <- if (l <= fitdf) NA else Box.test(series, lag = l, type = "Ljung-Box", fitdf = fitdf)$p.value
+    return(c("lag" = l,"pval" = pval))
+  })
+  return(t(pvals))
+}
+
+Qtests(arima410$residuals, 24, fitdf=1)
+Qtests(arima011$residuals, 24, fitdf=1)
+```
+# Partie III : Prévision
+
+
