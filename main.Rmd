@@ -45,7 +45,7 @@ rownames(data) <- NULL
 data$dates <- as.yearmon(data$dates)
 data$values <- as.numeric(data$values)
 
-raw_series <- zoo(data$values, order.by=data$dates)
+raw_series <- ts(data$values, start = min(data$dates), frequency = 12)
 ```
 
 # Partie I : données
@@ -57,7 +57,7 @@ plot(raw_series, main = name, xlab = "Dates", ylab = "Valeurs")
 plot(decompose(raw_series))
 ```
 
-Trois observations : une tendance linéaire croissante, une augmentation de la variance au cours du temps, pas de saisonnalité.
+Trois observations : une tendance linéaire croissante, une augmentation de la variance au cours du temps, pas de saisonnalité. Pas besoin de régression linéaire pour objectiver la tendance, elle est vraiment flagrante.
 
 ## 2. Stationnarisation
 
@@ -75,7 +75,7 @@ diff_series <- diff(log_series, 1)
 plot(decompose(diff_series))
 ```
 
-On vérifie que le résultat convient à l'aide de tests de stationnarité : c'est bon, sauf pour le KPSS sans drift ni trend (?).
+On vérifie que le résultat convient à l'aide de tests de stationnarité : c'est bon, sauf pour le KPSS sans drift ni trend. Il est vrai que les résidus ont toujours l'air hétéroscédastiques...
 
 ```{r eval=FALSE}
 adf <- adf.test(coredata(diff_series), nlag = 24, output = TRUE)
@@ -86,9 +86,9 @@ kpss.test(coredata(diff_series), lag.short = TRUE, output = TRUE)
 ## 3. Comparaison de la série initiale et de la série transformée
 
 ```{r}
-# par(mfrow = c(2, 1)) # bugue...
-plot(raw_series, main = "", xlab = "Dates", ylab = "Valeurs")
-plot(diff_series, main = "", xlab = "Dates", ylab = "Valeurs")
+# par(mfrow = c(2, 1)) 
+plot(raw_series, main = "Série initiale", xlab = "", ylab = "")
+plot(diff_series, main = "Série transformée", xlab = "", ylab = "")
 ```
 
 # Partie II : Modèle ARMA
@@ -96,7 +96,7 @@ plot(diff_series, main = "", xlab = "Dates", ylab = "Valeurs")
 ## 1. Identification des paramètres
 
 ```{r}
-# par(mfrow = c(2, 1)) # bugue...
+# par(mfrow = c(2, 1))
 acf(diff_series, main = paste(name))
 pacf(diff_series, main = paste(name))
 ```
@@ -104,6 +104,8 @@ pacf(diff_series, main = paste(name))
 On retient qmax=1 et pmax = 6.
 
 ## 2. Estimation des modèles
+
+Par les critères d'information : le modèle minimisant l'AIC est un ARMA(4,0) mais celui minimisant le BIC est un ARMA(0,1) (logique puisque le BIC pénalise davantage la complexité).
 
 ```{r}
 pmax <- 6
@@ -124,19 +126,40 @@ for (row in 1:dim(pqs)[1]){ # boucle pour chaque (p,q)
 }
 
 AICs # affiche les AICs
+AICs==min(AICs) 
+
 BICs # affiche les BICs
+BICs==min(BICs)
 ```
 
-Le modèle minimisant l'AIC est un ARMA(4,0) mais celui minimisant le BIC est un ARMA(0,1) : logique puisque le BIC pénalise davantage la complexité.
+Par l'erreur de prédiction : le modèle qui la minimise, sur les 4 dernières valeurs, est un ARMA(6,0).
 
 ```{r}
+valeurs <- data$values[407:410]
+pqs <- expand.grid(0:pmax,0:qmax)
+mat <- matrix(NA, nrow=pmax+1, ncol=qmax+1)
+rownames(mat) <- paste0("p=",0:pmax)
+colnames(mat) <- paste0("q=",0:qmax)
+erreurs_prediction <- mat 
+for (row in 1:dim(pqs)[1]){
+  p <- pqs[row,1]
+  q <- pqs[row,2]
+  erreurs_prediction[p+1,q+1] <- sqrt(mean((predict(arima(diff_series,c(p,1,q),include.mean=F),n.ahead = 4)$pred[1:4] - valeurs)^2))
+}
+
+erreurs_prediction
+erreurs_prediction==min(erreurs_prediction, na.rm = TRUE)
+```
+
+```{r}
+arima610 <- arima(log_series,c(6,1,0),include.mean=F)
 arima410 <- arima(log_series,c(4,1,0),include.mean=F)
 arima011 <- arima(log_series,c(0,1,1),include.mean=F)
 ```
 
 ## 3. Tests de validité et d'ajustement
 
-Pour l'ajustement, on vérifie la significativité des coefficients les plus élevés : c'est bon pour les deux modèles.
+Pour l'ajustement, on vérifie la significativité des coefficients les plus élevés : ceci conduit à éliminer l'ARMA(6,0).
 
 ```{r}
 signif <- function(estim){
@@ -147,11 +170,18 @@ signif <- function(estim){
   return(rbind(coef,se,pval))
 }
 
+signif(arima610)
 signif(arima410)
 signif(arima011)
 ```
 
-Pour la validité, c'est-à-dire la non-autocorrélation des résidus, on utilise le test Portemanteau. Il conduit à rejeter l'ARMA(4,1).
+Pour la validité, c'est-à-dire la non-autocorrélation des résidus, on utilise le test Portemanteau. Il conduit à rejeter l'ARMA(4,0).
+
+**Deux questions ici :**
+
+1.  **Comment choisir le paramètre fitdf ?**
+
+2.  **Comment interpréter les résultats du test ? On doit voir les pvalues s'annuler assez rapidement, ou même immédiatement ? Sinon les résidus ne sont pas un bruit blanc ? Pour le meilleur modèle on a encore une pvalue \> 5 % avec un lag de 8, c'est gênant ?**
 
 ```{r}
 Qtests <- function(series, k, fitdf = 0) {
@@ -162,9 +192,93 @@ Qtests <- function(series, k, fitdf = 0) {
   return(t(pvals))
 }
 
-Qtests(arima410$residuals, 24, fitdf=1)
-Qtests(arima011$residuals, 24, fitdf=1)
+Qtests(arima410$residuals, 24, fitdf=2)
+Qtests(arima011$residuals, 24, fitdf=2)
 ```
+
+Vérification avec la fonction auto.arima() : elle retient un ARMA(2,1) dont aucun coefficient n'est significatif à 5 %.
+
+```{r}
+auto.arima(log_series, trace = TRUE)
+```
+
 # Partie III : Prévision
 
+**Questions :**
 
+1.  **J'ai bricolé à partir de ton code en supprimant ce qui correspondait au terme MA2, puisque j'ai seulement un MA1 ici. Ca te paraît bon ?**
+
+2.  **Le modèle est ajusté sur la série log-transformée. J'ai donc appliqué les prédictions aux valeurs en log. C'est bon aussi ?**
+
+3.  **J'ai l'impression qu'il y a un problème avec ton code pour construire le dataframe avec les prédictions. Regarde si ce que j'ai fait te paraît mieux.**
+
+```{r}
+data$values <- log(data$values)
+
+prevT_1 = as.numeric(
+  data[length(rownames(data)), "values"] +
+  arima011$coef["ma1"]*arima011$residuals[length(arima011$residuals)])
+
+prevT_1_lower_5 = as.numeric(
+  data[length(rownames(data)),"values"] +
+  arima011$coef["ma1"]*arima011$residuals[length(arima011$residuals)] -
+  1.96*sqrt(arima011$sigma2))
+
+prevT_1_upper_5 = as.numeric(
+  data[length(rownames(data)),"values"] +
+  arima011$coef["ma1"]*arima011$residuals[length(arima011$residuals)] +
+  1.96*sqrt(arima011$sigma2))
+
+prevT_2 = as.numeric(
+  prevT_1 +
+  arima011$coef["ma1"]*arima011$residuals[length(arima011$residuals)])
+
+prevT_2_lower_5 = as.numeric(
+  prevT_1_lower_5 +
+  arima011$coef["ma1"]*arima011$residuals[length(arima011$residuals)] -
+  1.96*sqrt(arima011$sigma2))
+
+prevT_2_upper_5 = as.numeric(
+  prevT_1_upper_5 +
+  arima011$coef["ma1"]*arima011$residuals[length(arima011$residuals)] +
+  1.96*sqrt(arima011$sigma2))
+
+# df <- data.frame(horizon=rep(0:2, 9), 
+#                 valeurs=c(data[length(rownames(data)), "values"], prevT_1, prevT_2,
+#                       data[length(rownames(data)),"values"],prevT_1_lower_5,prevT_2_lower_5,
+#                       data[length(rownames(data)),"values"],prevT_1_upper_5,prevT_2_upper_5), 
+#                 categorie=c(rep("vValeurs prédites",3),
+#                            rep("IC lower bound",3),
+#                            rep("IC upper bound",3)))
+# ggplot(data = df, aes(x=horizon, y=valeurs)) + geom_line(aes(colour=categorie))
+
+dates <- seq(as.Date(min(data$dates[400:410])), by = "month", length.out = 13)
+values <- c(data$values[400:410], prevT_1, prevT_2)
+ICl <- c(rep(NA, 11), prevT_1_lower_5, prevT_2_lower_5)
+ICu <- c(rep(NA, 11), prevT_1_upper_5, prevT_2_upper_5)
+df <- data.frame(dates, values, ICl, ICu)
+
+ggplot(data = df, aes(x=dates, y=values)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = ICl, ymax = ICu), fill = "gray70", alpha = 0.5) +
+  geom_line(aes(y = ICl), color = "blue", linetype = "dashed") +  # Add ICl curve
+  geom_line(aes(y = ICu), color = "red", linetype = "dashed") +   # Add ICu curve
+  labs(x = "Dates", y = "Values") +
+  theme_minimal()
+```
+
+```{r}
+forecast_values <- forecast(arima011, h = 50, level = 95)
+
+forecast_values$x <- exp(forecast_values$x)
+forecast_values$mean <- exp(forecast_values$mean)
+forecast_values$lower <- exp(forecast_values$lower)
+forecast_values$upper <- exp(forecast_values$upper)
+
+plot(forecast_values, main = "Time Series Forecast", xlab = "Time", ylab = "Values")
+lines(log_series, col = "blue")
+lines(forecast_values$mean, col = "red")
+lines(forecast_values$upper, col = "green", lty = 2)
+lines(forecast_values$lower, col = "green", lty = 2)
+legend("topleft", legend = c("Original", "Forecast", "95% Confidence Interval"), col = c("blue", "red", "green"), lty = c(1, 1, 2))
+```
