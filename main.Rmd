@@ -45,6 +45,9 @@ rownames(data) <- NULL
 data$dates <- as.yearmon(data$dates)
 data$values <- as.numeric(data$values)
 
+# On tronque la série après 2019 pour éviter les flucutations intempestives dues au covid, surtout compte-tenu de l'objet de notre série.
+data <- data[1:which(data$dates == "Dec 2019"), ]
+
 raw_series <- ts(data$values, start = min(data$dates), frequency = 12)
 ```
 
@@ -57,7 +60,7 @@ plot(raw_series, main = name, xlab = "Dates", ylab = "Valeurs")
 plot(decompose(raw_series))
 ```
 
-Trois observations : une tendance linéaire croissante, une augmentation de la variance au cours du temps, pas de saisonnalité. Pas besoin de régression linéaire pour objectiver la tendance, elle est vraiment flagrante.
+Trois observations : une tendance linéaire croissante, une augmentation de la variance au cours du temps, aucune de saisonnalité. Pas besoin de régression linéaire pour objectiver la tendance, elle est vraiment flagrante.
 
 ## 2. Stationnarisation
 
@@ -75,12 +78,21 @@ diff_series <- diff(log_series, 1)
 plot(decompose(diff_series))
 ```
 
-On vérifie que le résultat convient à l'aide de tests de stationnarité : c'est bon, sauf pour le KPSS sans drift ni trend. Il est vrai que les résidus ont toujours l'air hétéroscédastiques...
+On vérifie que le résultat convient à l'aide de tests de stationnarité. La tendance a disparu mais il reste une légère dérive. On retient donc les tests avec drift sans trend. La série passe les trois.
 
 ```{r eval=FALSE}
-adf <- adf.test(coredata(diff_series), nlag = 24, output = TRUE)
-pp.test(coredata(diff_series), lag.short = TRUE, output = TRUE)
-kpss.test(coredata(diff_series), lag.short = TRUE, output = TRUE)
+cat(paste("Moyenne de la série :", mean(diff_series), "\n"))
+
+adf <- adf.test(coredata(diff_series), nlag = 24, output = FALSE)
+pp <- pp.test(coredata(diff_series), lag.short = TRUE, output = FALSE)
+kpss <- kpss.test(coredata(diff_series), lag.short = TRUE, output = FALSE)
+
+cat("\nTest ADF with drift no trend\n")
+print(adf$type2)
+cat("\nTest PP with drift no trend\n")
+print(pp["type 2", ])
+cat("\nTest KPSS with drift no trend\n")
+print(kpss["type 2", ])
 ```
 
 ## 3. Comparaison de la série initiale et de la série transformée
@@ -101,14 +113,14 @@ acf(diff_series, main = paste(name))
 pacf(diff_series, main = paste(name))
 ```
 
-On retient qmax=1 et pmax = 6.
+On retient qmax=1 et pmax = 11. Ce n'est pas l'approche la plus parcimonieuse, mais le pic à l=11 est quand même bien prononcé (et pas à 12, auquel cas on se serait plutôt inquiété d'un problème de saisonnalité).
 
 ## 2. Estimation des modèles
 
-Par les critères d'information : le modèle minimisant l'AIC est un ARMA(4,0) mais celui minimisant le BIC est un ARMA(0,1) (logique puisque le BIC pénalise davantage la complexité).
+Par les critères d'information : le modèle minimisant l'AIC est un ARMA(11,0) mais celui minimisant le BIC est un ARMA(0,1) (logique puisque le BIC pénalise davantage la complexité).
 
 ```{r}
-pmax <- 6
+pmax <- 11
 qmax <- 1
 mat <- matrix(NA, nrow=pmax+1,ncol=qmax+1) # matrice vide à remplir
 rownames(mat) <- paste0("p=",0:pmax) # renomme les lignes
@@ -125,41 +137,56 @@ for (row in 1:dim(pqs)[1]){ # boucle pour chaque (p,q)
   BICs[p+1,q+1] <- if (class(estim)=="try-error") NA else BIC(estim) # assigne le BIC
 }
 
-AICs # affiche les AICs
-AICs==min(AICs) 
+print(AICs)
+lowest_cell <- which(as.matrix(AICs) == min(as.matrix(AICs)), arr.ind = TRUE)
+p <- rownames(AICs)[lowest_cell[1]]
+p <- sub("^p=", "", p)
+q <- colnames(AICs)[lowest_cell[2]]
+q <- sub("^q=", "", q)
+cat(paste0("\nBest model according to AIC is an ARMA(",p, ",", q, ").\n\n"))
 
-BICs # affiche les BICs
-BICs==min(BICs)
+print(BICs)
+lowest_cell <- which(as.matrix(BICs) == min(as.matrix(BICs)), arr.ind = TRUE)
+p <- rownames(BICs)[lowest_cell[1]]
+p <- sub("^p=", "", p)
+q <- colnames(BICs)[lowest_cell[2]]
+q <- sub("^q=", "", q)
+cat(paste0("\nBest model according to BIC is an ARMA(",p, ",", q, ")."))
 ```
 
-Par l'erreur de prédiction : le modèle qui la minimise, sur les 4 dernières valeurs, est un ARMA(6,0).
+Par l'erreur de prédiction : le modèle qui la minimise, sur les 5 dernières valeurs, est un ARMA(0,0), donc un bruit blanc.
 
 ```{r}
-valeurs <- data$values[407:410]
+values <- data$values[(nrow(data) - 4):nrow(data)]
 pqs <- expand.grid(0:pmax,0:qmax)
 mat <- matrix(NA, nrow=pmax+1, ncol=qmax+1)
 rownames(mat) <- paste0("p=",0:pmax)
 colnames(mat) <- paste0("q=",0:qmax)
-erreurs_prediction <- mat 
+pred_error <- mat 
 for (row in 1:dim(pqs)[1]){
   p <- pqs[row,1]
   q <- pqs[row,2]
-  erreurs_prediction[p+1,q+1] <- sqrt(mean((predict(arima(diff_series,c(p,1,q),include.mean=F),n.ahead = 4)$pred[1:4] - valeurs)^2))
+  pred_error[p+1,q+1] <- sqrt(mean((predict(arima(diff_series,c(p,1,q),include.mean=F),n.ahead = 5)$pred[1:5] - values)^2))
 }
 
-erreurs_prediction
-erreurs_prediction==min(erreurs_prediction, na.rm = TRUE)
+pred_error
+lowest_cell <- which(as.matrix(pred_error) == min(as.matrix(pred_error)), arr.ind = TRUE)
+p <- rownames(BICs)[lowest_cell[1]]
+p <- sub("^p=", "", p)
+q <- colnames(BICs)[lowest_cell[2]]
+q <- sub("^q=", "", q)
+cat(paste0("\nBest model according to prediction error is an ARMA(",p, ",", q, ")."))
 ```
 
 ```{r}
-arima610 <- arima(log_series,c(6,1,0),include.mean=F)
-arima410 <- arima(log_series,c(4,1,0),include.mean=F)
+arima1110 <- arima(log_series,c(11,1,0),include.mean=F)
 arima011 <- arima(log_series,c(0,1,1),include.mean=F)
+arima010 <- arima(log_series,c(0,1,0),include.mean=F)
 ```
 
 ## 3. Tests de validité et d'ajustement
 
-Pour l'ajustement, on vérifie la significativité des coefficients les plus élevés : ceci conduit à éliminer l'ARMA(6,0).
+Pour l'ajustement, on vérifie la significativité des coefficients les plus élevés : l'ARMA(11,0) et l'ARMA(0,1) passent ce test (qui n'a évidemment pas de sens pour un bruit blanc).
 
 ```{r}
 signif <- function(estim){
@@ -170,18 +197,12 @@ signif <- function(estim){
   return(rbind(coef, se, pval))
 }
 
-signif(arima610)
-signif(arima410)
+signif(arima1110)
+cat("\n")
 signif(arima011)
 ```
 
-Pour la validité, c'est-à-dire la non-autocorrélation des résidus, on utilise le test Portemanteau. Il conduit à rejeter l'ARMA(4,0).
-
-**Deux questions ici :**
-
-1.  **Comment choisir le paramètre fitdf ?**
-
-2.  **Comment interpréter les résultats du test ? On doit voir les pvalues s'annuler assez rapidement, ou même immédiatement ? Sinon les résidus ne sont pas un bruit blanc ? Pour le meilleur modèle on a encore une pvalue \> 5 % avec un lag de 8, c'est gênant ?**
+Pour la validité, c'est-à-dire la non-autocorrélation des résidus, on utilise le test Portemanteau. Il conduit à rejeter l'ARMA(0,1) et l'ARMA(0,0).
 
 ```{r}
 Qtests <- function(series, k, fitdf = 0) {
@@ -192,11 +213,15 @@ Qtests <- function(series, k, fitdf = 0) {
   return(t(pvals))
 }
 
-Qtests(arima410$residuals, 24, fitdf=2)
-Qtests(arima011$residuals, 24, fitdf=2)
+cat("ARMA(11,0)\n")
+Qtests(arima1110$residuals, 24, fitdf=11)
+cat("\nARMA(0,1)\n")
+Qtests(arima011$residuals, 24, fitdf=1)
+cat("\nARMA(0,0)\n")
+Qtests(arima010$residuals, 24, fitdf=0)
 ```
 
-Vérification avec la fonction auto.arima() : elle retient un ARMA(2,1) dont aucun coefficient n'est significatif à 5 %.
+Vérification avec la fonction auto.arima() : elle retient l'ARMA(0,1) qu'on vient d'écarter.
 
 ```{r}
 auto.arima(log_series, trace = TRUE)
@@ -204,39 +229,76 @@ auto.arima(log_series, trace = TRUE)
 
 # Partie III : Prévision
 
-**Questions :**
-
-1.  **J'ai bricolé à partir de ton code en supprimant ce qui correspondait au terme MA2, puisque j'ai seulement un MA1 ici. Ca te paraît bon ?**
-
-2.  **Le modèle est ajusté sur la série log-transformée. J'ai donc appliqué les prédictions aux valeurs en log. C'est bon aussi ?**
-
-3.  **J'ai l'impression qu'il y a un problème avec ton code pour construire le dataframe avec les prédictions. Regarde si ce que j'ai fait te paraît mieux.**
+Nous allons bien nous amuser avec un ARMA(11,0) ! On élimine les coefficients ar5, ar6 et ar7 qui n'étaient pas significatifs plus haut.
 
 ```{r}
-# data$values <- log(data$values)
-print(data$values[length(rownames(data))])
+# Chunk pour réinitier
+data <- read.csv("valeurs_mensuelles.csv", sep = ";")
+data <- data[-c(1:3), -3]
+colnames(data) <- c("dates", "values")
+data <- data[order(data$dates), ]
+rownames(data) <- NULL
+data$dates <- as.yearmon(data$dates)
+data$values <- as.numeric(data$values)
+data <- data[1:which(data$dates == "Dec 2019"), ]
+raw_series <- ts(data$values, start = min(data$dates), frequency = 12)
+log_series <- log(raw_series)
+arima1110 <- arima(log_series,c(11,1,0),include.mean=F)
+
+data$log_values <- log(data$values)
+```
+
+```{r}
+T <- as.numeric(nrow(data))
+prevT1 <- 0
+for (i in c(1:4, 8:11)) {
+  prevT1 <- prevT1 + as.numeric(arima1110$coef[paste0("ar", i)]) * data$log_values[T - i + 1]}
+prevT1_CIl <- prevT1 - 1.96*sqrt(arima1110$sigma2)
+prevT1_CIu <- prevT1 + 1.96*sqrt(arima1110$sigma2)
+data <- rbind(data, c(max(data$dates)+1/12, exp(prevT1), prevT1))
+# R s'obstine à arrondir les valeurs , je ne comprends pas pourquoi :-(
+
+T <- as.numeric(nrow(data))
+prevT2 <- 0
+for (i in c(1:4, 8:11)) {
+  prevT2 <- prevT2 + as.numeric(arima1110$coef[paste0("ar", i)]) * data$log_values[T - i + 1]}
+prevT2_CIl <- prevT2 - 1.96*sqrt(arima1110$sigma2)
+prevT2_CIu <- prevT2 + 1.96*sqrt(arima1110$sigma2)
+data <- rbind(data, c(max(data$dates)+1/12, exp(prevT2), prevT2))
+
+T <- as.numeric(nrow(data))
+t <- T - 10
+dates <- seq(as.Date(min(data$dates[t:T])), by = "month", length.out = 11)
+values <- c(data$log_values[t:T])
+ICl <- c(rep(NA, 9), prevT1_CIl, prevT2_CIl)
+ICu <- c(rep(NA, 9), prevT1_CIu, prevT2_CIu)
+df <- data.frame(dates, values, ICl, ICu)
+
+ggplot(data = df, aes(x=dates, y=values)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = ICl, ymax = ICu), fill = "lightgray", alpha = 0.5) +
+  geom_line(aes(y = ICl), color = "blue", linetype = "dashed") +
+  geom_line(aes(y = ICu), color = "red", linetype = "dashed") +
+  labs(title = "Prévisions à t+2", x = "", y = "") +
+  theme_minimal()
+```
+
+```{r}
+# Legacy
+data$log_values <- log(data$values)
 
 prevT1 = as.numeric(
-  data$values[length(rownames(data))] +
+  data$log_values[nrow(data)] +
   arima011$coef["ma1"] * arima011$residuals[length(arima011$residuals)])
 prevT1_lower5 = as.numeric(prevT1 - 1.96*sqrt(arima011$sigma2))
 prevT1_upper5 = as.numeric(prevT1 + 1.96*sqrt(arima011$sigma2))
 
 prevT2 = as.numeric(prevT1 + arima011$coef["ma1"] * arima011$residuals[length(arima011$residuals)])
-prevT2_lower5 = as.numeric(prevT2_lower5 - 1.96*sqrt(arima011$sigma2))
-prevT2_upper5 = as.numeric(prevT2_upper5 + 1.96*sqrt(arima011$sigma2))
-
-# df <- data.frame(horizon=rep(0:2, 9), 
-#                 valeurs=c(data[length(rownames(data)), "values"], prevT_1, prevT_2,
-#                       data[length(rownames(data)),"values"],prevT_1_lower_5,prevT_2_lower_5,
-#                       data[length(rownames(data)),"values"],prevT_1_upper_5,prevT_2_upper_5), 
-#                 categorie=c(rep("vValeurs prédites",3),
-#                            rep("IC lower bound",3),
-#                            rep("IC upper bound",3)))
-# ggplot(data = df, aes(x=horizon, y=valeurs)) + geom_line(aes(colour=categorie))
+prevT2_lower5 = as.numeric(prevT1_lower5 - 1.96*sqrt(arima011$sigma2))
+prevT2_upper5 = as.numeric(prevT1_upper5 + 1.96*sqrt(arima011$sigma2))
 
 dates <- seq(as.Date(min(data$dates[395:410])), by = "month", length.out = 18)
-values <- exp(c(data$values[395:410], prevT1, prevT2))
+values <- exp(c(data$log_values[395:410], prevT1, prevT2))
 ICl <- exp(c(rep(NA, 16), prevT1_lower5, prevT2_lower5))
 ICu <- exp(c(rep(NA, 16), prevT1_upper5, prevT2_upper5))
 df <- data.frame(dates, values, ICl, ICu)
@@ -251,6 +313,7 @@ ggplot(data = df, aes(x=dates, y=values)) +
 ```
 
 ```{r}
+# Legacy
 forecast_values <- forecast(arima011, h = 50, level = 95)
 
 forecast_values$x <- exp(forecast_values$x)
