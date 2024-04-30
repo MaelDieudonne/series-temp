@@ -1,7 +1,7 @@
 **Pré-requis**
 
 ```{r include=FALSE}
-packages <- c("astsa", "aTSA", "forecast", "fUnitRoots", "MASS", "xts")
+packages <- c("astsa", "aTSA", "forecast", "fUnitRoots", "ggplot2", "MASS", "xts")
 installed_packages <- packages %in% rownames(installed.packages())
 
 if (any(installed_packages == FALSE)) {install.packages(packages[!installed_packages])}
@@ -32,7 +32,7 @@ unlink(file_list[2], recursive = TRUE)
 rm(file_url, local_file_name, file_list)
 ```
 
-**Conversion au format Zoo**
+**Conversion au format ts**
 
 ```{r}
 data <- read.csv("valeurs_mensuelles.csv", sep = ";")
@@ -167,7 +167,7 @@ signif <- function(estim){
   se <- sqrt(diag(estim$var.coef))
   t <- coef/se
   pval <- (1-pnorm(abs(t)))*2
-  return(rbind(coef,se,pval))
+  return(rbind(coef, se, pval))
 }
 
 signif(arima610)
@@ -213,35 +213,18 @@ auto.arima(log_series, trace = TRUE)
 3.  **J'ai l'impression qu'il y a un problème avec ton code pour construire le dataframe avec les prédictions. Regarde si ce que j'ai fait te paraît mieux.**
 
 ```{r}
-data$values <- log(data$values)
+# data$values <- log(data$values)
+print(data$values[length(rownames(data))])
 
-prevT_1 = as.numeric(
-  data[length(rownames(data)), "values"] +
-  arima011$coef["ma1"]*arima011$residuals[length(arima011$residuals)])
+prevT1 = as.numeric(
+  data$values[length(rownames(data))] +
+  arima011$coef["ma1"] * arima011$residuals[length(arima011$residuals)])
+prevT1_lower5 = as.numeric(prevT1 - 1.96*sqrt(arima011$sigma2))
+prevT1_upper5 = as.numeric(prevT1 + 1.96*sqrt(arima011$sigma2))
 
-prevT_1_lower_5 = as.numeric(
-  data[length(rownames(data)),"values"] +
-  arima011$coef["ma1"]*arima011$residuals[length(arima011$residuals)] -
-  1.96*sqrt(arima011$sigma2))
-
-prevT_1_upper_5 = as.numeric(
-  data[length(rownames(data)),"values"] +
-  arima011$coef["ma1"]*arima011$residuals[length(arima011$residuals)] +
-  1.96*sqrt(arima011$sigma2))
-
-prevT_2 = as.numeric(
-  prevT_1 +
-  arima011$coef["ma1"]*arima011$residuals[length(arima011$residuals)])
-
-prevT_2_lower_5 = as.numeric(
-  prevT_1_lower_5 +
-  arima011$coef["ma1"]*arima011$residuals[length(arima011$residuals)] -
-  1.96*sqrt(arima011$sigma2))
-
-prevT_2_upper_5 = as.numeric(
-  prevT_1_upper_5 +
-  arima011$coef["ma1"]*arima011$residuals[length(arima011$residuals)] +
-  1.96*sqrt(arima011$sigma2))
+prevT2 = as.numeric(prevT1 + arima011$coef["ma1"] * arima011$residuals[length(arima011$residuals)])
+prevT2_lower5 = as.numeric(prevT2_lower5 - 1.96*sqrt(arima011$sigma2))
+prevT2_upper5 = as.numeric(prevT2_upper5 + 1.96*sqrt(arima011$sigma2))
 
 # df <- data.frame(horizon=rep(0:2, 9), 
 #                 valeurs=c(data[length(rownames(data)), "values"], prevT_1, prevT_2,
@@ -252,18 +235,18 @@ prevT_2_upper_5 = as.numeric(
 #                            rep("IC upper bound",3)))
 # ggplot(data = df, aes(x=horizon, y=valeurs)) + geom_line(aes(colour=categorie))
 
-dates <- seq(as.Date(min(data$dates[400:410])), by = "month", length.out = 13)
-values <- c(data$values[400:410], prevT_1, prevT_2)
-ICl <- c(rep(NA, 11), prevT_1_lower_5, prevT_2_lower_5)
-ICu <- c(rep(NA, 11), prevT_1_upper_5, prevT_2_upper_5)
+dates <- seq(as.Date(min(data$dates[395:410])), by = "month", length.out = 18)
+values <- exp(c(data$values[395:410], prevT1, prevT2))
+ICl <- exp(c(rep(NA, 16), prevT1_lower5, prevT2_lower5))
+ICu <- exp(c(rep(NA, 16), prevT1_upper5, prevT2_upper5))
 df <- data.frame(dates, values, ICl, ICu)
 
 ggplot(data = df, aes(x=dates, y=values)) +
   geom_line() +
-  geom_ribbon(aes(ymin = ICl, ymax = ICu), fill = "gray70", alpha = 0.5) +
-  geom_line(aes(y = ICl), color = "blue", linetype = "dashed") +  # Add ICl curve
-  geom_line(aes(y = ICu), color = "red", linetype = "dashed") +   # Add ICu curve
-  labs(x = "Dates", y = "Values") +
+  geom_ribbon(aes(ymin = ICl, ymax = ICu), fill = "lightgray", alpha = 0.5) +
+  geom_line(aes(y = ICl), color = "blue", linetype = "dashed") +
+  geom_line(aes(y = ICu), color = "red", linetype = "dashed") +
+  labs(title = "Prévisions à t+2", x = "", y = "") +
   theme_minimal()
 ```
 
