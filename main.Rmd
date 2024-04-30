@@ -231,8 +231,13 @@ auto.arima(log_series, trace = TRUE)
 
 Nous allons bien nous amuser avec un ARMA(11,0) ! On élimine les coefficients ar5, ar6 et ar7 qui n'étaient pas significatifs plus haut.
 
+$$
+\nabla\hat{X}_{t+1} = \hat{ar}_1 \nabla X_t + \hat{ar}_2 \nabla X_{t-1} + ... + \hat{ar}_{11} \nabla X_{t-10} \\
+\hat{X}_{t+1} = X_t + \hat{ar}_1(X_t - X_{t-1}) + \hat{ar}_2(X_{t-1} - X_{t-2}) + ... + \hat{ar}_{11}(X_{t-10} - X_{t-11})
+$$
+
 ```{r}
-# Chunk pour réinitier
+# Chunk pour réinitialiser, à supprimer
 data <- read.csv("valeurs_mensuelles.csv", sep = ";")
 data <- data[-c(1:3), -3]
 colnames(data) <- c("dates", "values")
@@ -244,87 +249,48 @@ data <- data[1:which(data$dates == "Dec 2019"), ]
 raw_series <- ts(data$values, start = min(data$dates), frequency = 12)
 log_series <- log(raw_series)
 arima1110 <- arima(log_series,c(11,1,0),include.mean=F)
+```
 
+```{r}
 data$log_values <- log(data$values)
+data$CIlow <- NA
+data$CIup <- NA
 ```
 
 ```{r}
-T <- as.numeric(nrow(data))
-prevT1 <- 0
-for (i in c(1:4, 8:11)) {
-  prevT1 <- prevT1 + as.numeric(arima1110$coef[paste0("ar", i)]) * data$log_values[T - i + 1]}
-prevT1_CIl <- prevT1 - 1.96*sqrt(arima1110$sigma2)
-prevT1_CIu <- prevT1 + 1.96*sqrt(arima1110$sigma2)
-data <- rbind(data, c(max(data$dates)+1/12, exp(prevT1), prevT1))
-# R s'obstine à arrondir les valeurs , je ne comprends pas pourquoi :-(
+forecast <- function(h) {
+  for (j in 1:h) {
+    T <- nrow(data)
+    prev <- data$log_values[T]
+    for (i in c(1:4, 8:11)) {
+      prev <- prev + as.numeric(arima1110$coef[paste0("ar", i)]) * (data$log_values[T-i+1] - data$log_values[T-i])}
+    CIlow <- prev - j*1.96*sqrt(arima1110$sigma2)
+    CIup <- prev + j*1.96*sqrt(arima1110$sigma2) 
+    data <<- rbind(
+      data,
+      data.frame(dates = (max(data$dates)) + (1/12), values = exp(prev), log_values = prev, CIlow = exp(CIlow), CIup = exp(CIup)))
+  }
+}
+forecast(5)
 
-T <- as.numeric(nrow(data))
-prevT2 <- 0
-for (i in c(1:4, 8:11)) {
-  prevT2 <- prevT2 + as.numeric(arima1110$coef[paste0("ar", i)]) * data$log_values[T - i + 1]}
-prevT2_CIl <- prevT2 - 1.96*sqrt(arima1110$sigma2)
-prevT2_CIu <- prevT2 + 1.96*sqrt(arima1110$sigma2)
-data <- rbind(data, c(max(data$dates)+1/12, exp(prevT2), prevT2))
+subset_data[(nrow(data) - 25):nrow(data), ]
 
-T <- as.numeric(nrow(data))
-t <- T - 10
-dates <- seq(as.Date(min(data$dates[t:T])), by = "month", length.out = 11)
-values <- c(data$log_values[t:T])
-ICl <- c(rep(NA, 9), prevT1_CIl, prevT2_CIl)
-ICu <- c(rep(NA, 9), prevT1_CIu, prevT2_CIu)
-df <- data.frame(dates, values, ICl, ICu)
-
-ggplot(data = df, aes(x=dates, y=values)) +
+ggplot(data = subset_data, aes(x=dates, y=values)) +
   geom_line() +
-  geom_ribbon(aes(ymin = ICl, ymax = ICu), fill = "lightgray", alpha = 0.5) +
-  geom_line(aes(y = ICl), color = "blue", linetype = "dashed") +
-  geom_line(aes(y = ICu), color = "red", linetype = "dashed") +
-  labs(title = "Prévisions à t+2", x = "", y = "") +
-  theme_minimal()
-```
+  geom_ribbon(aes(ymin = CIlow, ymax = CIup), fill = "lightgray", alpha = 0.5) +
+  geom_line(aes(y = CIlow), color = "lightgreen", linetype = "dashed") +
+  geom_line(aes(y = CIup), color = "lightgreen", linetype = "dashed") +
+  labs(title = "Prévisions à t+5", x = "", y = "") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
 
-```{r}
-# Legacy
-data$log_values <- log(data$values)
-
-prevT1 = as.numeric(
-  data$log_values[nrow(data)] +
-  arima011$coef["ma1"] * arima011$residuals[length(arima011$residuals)])
-prevT1_lower5 = as.numeric(prevT1 - 1.96*sqrt(arima011$sigma2))
-prevT1_upper5 = as.numeric(prevT1 + 1.96*sqrt(arima011$sigma2))
-
-prevT2 = as.numeric(prevT1 + arima011$coef["ma1"] * arima011$residuals[length(arima011$residuals)])
-prevT2_lower5 = as.numeric(prevT1_lower5 - 1.96*sqrt(arima011$sigma2))
-prevT2_upper5 = as.numeric(prevT1_upper5 + 1.96*sqrt(arima011$sigma2))
-
-dates <- seq(as.Date(min(data$dates[395:410])), by = "month", length.out = 18)
-values <- exp(c(data$log_values[395:410], prevT1, prevT2))
-ICl <- exp(c(rep(NA, 16), prevT1_lower5, prevT2_lower5))
-ICu <- exp(c(rep(NA, 16), prevT1_upper5, prevT2_upper5))
-df <- data.frame(dates, values, ICl, ICu)
-
-ggplot(data = df, aes(x=dates, y=values)) +
-  geom_line() +
-  geom_ribbon(aes(ymin = ICl, ymax = ICu), fill = "lightgray", alpha = 0.5) +
-  geom_line(aes(y = ICl), color = "blue", linetype = "dashed") +
-  geom_line(aes(y = ICu), color = "red", linetype = "dashed") +
-  labs(title = "Prévisions à t+2", x = "", y = "") +
-  theme_minimal()
-```
-
-```{r}
-# Legacy
-forecast_values <- forecast(arima011, h = 50, level = 95)
-
-forecast_values$x <- exp(forecast_values$x)
-forecast_values$mean <- exp(forecast_values$mean)
-forecast_values$lower <- exp(forecast_values$lower)
-forecast_values$upper <- exp(forecast_values$upper)
-
-plot(forecast_values, main = "Time Series Forecast", xlab = "Time", ylab = "Values")
-lines(log_series, col = "blue")
-lines(forecast_values$mean, col = "red")
-lines(forecast_values$upper, col = "green", lty = 2)
-lines(forecast_values$lower, col = "green", lty = 2)
-legend("topleft", legend = c("Original", "Forecast", "95% Confidence Interval"), col = c("blue", "red", "green"), lty = c(1, 1, 2))
+ggplot(data = subset_data, aes(x = dates, y = values)) +
+  geom_line(aes(colour = ifelse(seq_along(values) > (length(values) - 5), "Prédictions", "Observations")), size = 0.5) +
+  geom_ribbon(aes(ymin = CIlow, ymax = CIup), fill = "lightgray", alpha = 0.5) +
+  geom_line(aes(y = CIlow), color = "lightgreen", linetype = "dashed") +
+  geom_line(aes(y = CIup), color = "lightgreen", linetype = "dashed") +
+  scale_colour_manual(values = c("blue", "black"), guide = FALSE) +
+  labs(title = "Prévisions à t+5", x = "", y = "") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
 ```
