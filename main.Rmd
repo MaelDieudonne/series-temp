@@ -12,7 +12,7 @@ rm(installed_packages, packages)
 
 **Téléchargement puis extraction des données**
 
-Série traitée : Indice CVS-CJO de la production industrielle dans l'industrie pharmaceutique (base 100 en 2021)
+La série étudiée est l'indice CVS-CJO de la production industrielle dans l'industrie pharmaceutique (base 100 en 2021).
 
 ```{r include=FALSE}
 file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010767832?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=2&anneeFin=2024&revision=sansrevisions"
@@ -32,7 +32,9 @@ unlink(file_list[2], recursive = TRUE)
 rm(file_url, local_file_name, file_list)
 ```
 
-**Conversion au format ts**
+**Préparation des données**
+
+On supprime l'entête, on s'assure du nom et du format des colonnes, on tronque la série en décembre 2019 (pour éliminer les fluctuation intempestives dues au covid) et on la convertit au format ts.
 
 ```{r}
 data <- read.csv("valeurs_mensuelles.csv", sep = ";")
@@ -45,7 +47,6 @@ rownames(data) <- NULL
 data$dates <- as.yearmon(data$dates)
 data$values <- as.numeric(data$values)
 
-# On tronque la série après 2019 pour éviter les flucutations intempestives dues au covid, surtout compte-tenu de l'objet de notre série.
 data <- data[1:which(data$dates == "Dec 2019"), ]
 
 raw_series <- ts(data$values, start = min(data$dates), frequency = 12)
@@ -57,10 +58,10 @@ raw_series <- ts(data$values, start = min(data$dates), frequency = 12)
 
 ```{r}
 plot(raw_series, main = name, xlab = "Dates", ylab = "Valeurs")
-plot(decompose(raw_series))
+plot(decompose(raw_series), xlab = "")
 ```
 
-Trois observations : une tendance linéaire croissante, une augmentation de la variance au cours du temps, aucune de saisonnalité. Pas besoin de régression linéaire pour objectiver la tendance, elle est vraiment flagrante.
+On remarque une tendance linéaire croissante, une augmentation progressive de la variance, et l'absence de saisonnalité.
 
 ## 2. Stationnarisation
 
@@ -68,20 +69,20 @@ On commence par une transformation logarithmique pour corriger l'hétéroscédas
 
 ```{r}
 log_series <- log(raw_series)
-plot(decompose(log_series))
+plot(decompose(log_series), xlab = "")
 ```
 
 On différencie ensuite à l'ordre 1 pour éliminer la tendance.
 
 ```{r}
 diff_series <- diff(log_series, 1)
-plot(decompose(diff_series))
+plot(decompose(diff_series), xlab = "")
 ```
 
-On vérifie que le résultat convient à l'aide de tests de stationnarité. La tendance a disparu mais il reste une légère dérive. On retient donc les tests avec drift sans trend. La série passe les trois.
+On vérifie que le résultat convient à l'aide des tests usuels de stationnarité. La tendance a disparu mais il reste une légère dérive. On retient donc les tests avec dérive et sans tendance.
 
 ```{r eval=FALSE}
-cat(paste("Moyenne de la série :", mean(diff_series), "\n"))
+cat(paste("Dérive de la série :", mean(diff_series), "\n"))
 
 adf <- adf.test(coredata(diff_series), nlag = 24, output = FALSE)
 pp <- pp.test(coredata(diff_series), lag.short = TRUE, output = FALSE)
@@ -95,6 +96,8 @@ cat("\nTest KPSS with drift no trend\n")
 print(kpss["type 2", ])
 ```
 
+Les résultats permettent de rejeter l'hypothèse nulle de non-stationnarité pour les test ADF et PP, mais pas l'hypothèse nulle de stationnarité avec le test KPSS.
+
 ## 3. Comparaison de la série initiale et de la série transformée
 
 ```{r}
@@ -107,17 +110,19 @@ plot(diff_series, main = "Série transformée", xlab = "", ylab = "")
 
 ## 1. Identification des paramètres
 
+On représente les fonctions d'autocorrélation et d'auto-corrélation partielle.
+
 ```{r}
 # par(mfrow = c(2, 1))
 acf(diff_series, main = paste(name))
 pacf(diff_series, main = paste(name))
 ```
 
-On retient qmax=1 et pmax = 11. Ce n'est pas l'approche la plus parcimonieuse, mais le pic à l=11 est quand même bien prononcé (et pas à 12, auquel cas on se serait plutôt inquiété d'un problème de saisonnalité).
+On retient les valeurs de 1 pour *q* et 11 pour *p*. Ce n'est pas l'approche la plus parcimonieuse, mais le pic apparaissant au 11e retard pour les auto-corrélations partielles est bien prononcé (s'il apparaissait au 12e, on se serait plutôt inquiété d'une saisonnalité non-corrigée).
 
 ## 2. Estimation des modèles
 
-Par les critères d'information : le modèle minimisant l'AIC est un ARMA(11,0) mais celui minimisant le BIC est un ARMA(0,1) (logique puisque le BIC pénalise davantage la complexité).
+On compare les modèles possibles selon les critères d'information : c'est un AR(11) qui minimise l'AIC et un MA(1) qui minimise le BIC (ce qui est logique puisque le BIC pénalise davantage la complexité).
 
 ```{r}
 pmax <- 11
@@ -154,7 +159,7 @@ q <- sub("^q=", "", q)
 cat(paste0("\nBest model according to BIC is an ARMA(",p, ",", q, ")."))
 ```
 
-Par l'erreur de prédiction : le modèle qui la minimise, sur les 5 dernières valeurs, est un ARMA(0,0), donc un bruit blanc.
+On compare les modèles possibles selon l'erreur de prédiction calculées sur 5 dernières valeurs : c'est un ARMA(0,0) qui la minimise, c'est-à-dire un bruit blanc.
 
 ```{r}
 values <- data$values[(nrow(data) - 4):nrow(data)]
@@ -178,6 +183,8 @@ q <- sub("^q=", "", q)
 cat(paste0("\nBest model according to prediction error is an ARMA(",p, ",", q, ")."))
 ```
 
+On retient ces trois modèles afin de vérifier leur validité et leur ajustement.
+
 ```{r}
 arima1110 <- arima(log_series,c(11,1,0),include.mean=F)
 arima011 <- arima(log_series,c(0,1,1),include.mean=F)
@@ -186,14 +193,14 @@ arima010 <- arima(log_series,c(0,1,0),include.mean=F)
 
 ## 3. Tests de validité et d'ajustement
 
-Pour l'ajustement, on vérifie la significativité des coefficients les plus élevés : l'ARMA(11,0) et l'ARMA(0,1) passent ce test (qui n'a évidemment pas de sens pour un bruit blanc).
+Concernant d'abord l'ajustement, on vérifie la significativité des coefficients les plus élevés : les modèles AR(11) et MA(1) passent ce test, qui n'a évidemment pas de sens pour un bruit blanc.
 
 ```{r}
 signif <- function(estim){
   coef <- estim$coef
   se <- sqrt(diag(estim$var.coef))
   t <- coef/se
-  pval <- (1-pnorm(abs(t)))*2
+  pval <- (1 - pnorm(abs(t)))*2
   return(rbind(coef, se, pval))
 }
 
@@ -202,7 +209,7 @@ cat("\n")
 signif(arima011)
 ```
 
-Pour la validité, c'est-à-dire la non-autocorrélation des résidus, on utilise le test Portemanteau. Il conduit à rejeter l'ARMA(0,1) et l'ARMA(0,0).
+On considère maintenant la validité, c'est-à-dire l'absence d'autocorrélation entre les résidus. On utilise un test Portemanteau, conduisant à rejeter le MA(1) et l'ARMA(0,0).
 
 ```{r}
 Qtests <- function(series, k, fitdf = 0) {
@@ -221,7 +228,7 @@ cat("\nARMA(0,0)\n")
 Qtests(arima010$residuals, 24, fitdf=0)
 ```
 
-Vérification avec la fonction auto.arima() : elle retient l'ARMA(0,1) qu'on vient d'écarter.
+On procède à une dernière vérification avec la fonction auto.arima() du package forecast : elle retient le MA(1) que l'on vient d'écarter.
 
 ```{r}
 auto.arima(log_series, trace = TRUE)
@@ -229,23 +236,40 @@ auto.arima(log_series, trace = TRUE)
 
 # Partie III : Prévision
 
-Nous allons bien nous amuser avec un ARMA(11,0) ! On élimine les coefficients ar5, ar6 et ar7 qui n'étaient pas significatifs plus haut.
-
-$$
-\nabla\hat{X}_{t+1} = \hat{ar}_1 \nabla X_t + \hat{ar}_2 \nabla X_{t-1} + ... + \hat{ar}_{11} \nabla X_{t-10} \\
-\hat{X}_{t+1} = X_t + \hat{ar}_1(X_t - X_{t-1}) + \hat{ar}_2(X_{t-1} - X_{t-2}) + ... + \hat{ar}_{11}(X_{t-10} - X_{t-11})
-$$
+On commence par préparer un dataframe pour stocker les valeurs prédites et les intervalles de confiance.
 
 ```{r}
 data$log_values <- log(data$values)
 data$CIlow <- NA
 data$CIup <- NA
-data$dummy <- 0
-
 data$CIlow[nrow(data)] <- data$values[nrow(data)]
 data$CIup[nrow(data)] <- data$values[nrow(data)]
-data$dummy[nrow(data)] <- 1
 ```
+
+On passe à la prédiction à l'aide du modèle AR(11) retenu. Il s'écrit ainsi :
+
+$$
+\nabla X_{t+1} = ar_1 \nabla X_t + ar_2 \nabla X_{t-1} + \cdots + ar_{11} \nabla X_{t-10} + \varepsilon_t
+$$
+
+On en déduit l'expression des termes prédits :
+
+$$
+\hat{X}_{t+1} = E(X_{t+1}|X_t,\ldots,X_{t-11}) = X_t + \hat{ar}_1(X_t - X_{t-1}) + \hat{ar}_2(X_{t-1} - X_{t-2}) + \cdots + \hat{ar}_{11}(X_{t-10} - X_{t-11}) \\
+\hat{X}_{t+2} = E(X_{t+2}|\hat{X}_{t+1},X_t,\ldots,X_{t-10}) = \hat{X}_{t+1} + \hat{ar}_1(\hat{X}_{t+1} - X_{t}) + \hat{ar}_2(X_{t} - X_{t-1}) + \cdots + \hat{ar}_{11}(X_{t-9} - X_{t-10})
+$$
+
+On élimine les coefficients ar5, ar6 et ar7 qui ne sont pas significatifs au seuil de 10 %, comme on l'a vu plus haut. Pour calculer l'intervalle de confiance, on néglige l'incertitude entourant les coefficients estimés, pour considérer seulement la variance des résidus. On écrit une fonction qui permet d'étendre facilement l'horizon de prédiction. On retient 6 mois, au prix d'un intervalle de confiance croissant fortement.
+
+**Je ne suis pas complètement sûr concernant l'IC, il faudrait peut-être plutôt :**
+
+-   **h=1: sigma2**
+
+-   **h=2: (1+ar1)\*sigma2**
+
+-   **h=3: (1+ar2)(1+ar1)\*sigma2**
+
+-   **etc.**
 
 ```{r}
 forecast <- function(h) {
@@ -258,22 +282,38 @@ forecast <- function(h) {
     CIup <- prev + j*1.96*sqrt(arima1110$sigma2) 
     data <<- rbind(
       data,
-      data.frame(dates = (max(data$dates)) + (1/12), values = exp(prev), log_values = prev, CIlow = exp(CIlow), CIup = exp(CIup), dummy = 1))
+      data.frame(dates = (max(data$dates)) + (1/12), values = exp(prev), log_values = prev, CIlow = exp(CIlow), CIup = exp(CIup)))
   }
 }
 
 forecast(6)
 ```
 
+On représente finalement les résultats. Le paramètre *r* permet de choisir la durée représentée, prédictions incluses, soit ici 24 mois d'observations et 6 mois de prédiction.
+
 ```{r}
-subset_data <- data[(nrow(data) - 25):nrow(data), ]
+r <- 30
+subset_data <- data[(nrow(data) - r):nrow(data), ]
+
 ggplot(data = subset_data) +
-  geom_line(data = subset_data[0:(nrow(subset_data)-6), ], aes(x=dates, y=values), color = "skyblue") +
-  geom_line(data = subset_data[(nrow(subset_data)-6):nrow(subset_data), ], aes(x=dates, y=values), color = "orange") +
-  geom_line(aes(x=dates, y = CIlow), color = "lightgreen", linetype = "dashed") +
-  geom_line(aes(x=dates, y = CIup), color = "lightgreen", linetype = "dashed") +
-  geom_ribbon(aes(x=dates, ymin = CIlow, ymax = CIup), fill = "lightgray", alpha = 0.5) +
-  labs(title = "Production de l'industrie pharmaceutique", subtitle = "Prévisions à m+6", x = "", y = "") +
+  geom_line(data = subset_data[0:(nrow(subset_data)-6), ], aes(x=dates, y=values, color = "obs")) +
+  geom_line(data = subset_data[(nrow(subset_data)-6):nrow(subset_data), ], aes(x=dates, y=values, color = "pred")) +
+  geom_line(aes(x=dates, y = CIlow), color = "darkgrey", linetype = "dashed") +
+  geom_line(aes(x=dates, y = CIup), color = "darkgrey", linetype = "dashed") +
+  geom_ribbon(aes(x=dates, ymin = CIlow, ymax = CIup, fill = "IC"), alpha = 0.5) +
+  scale_color_manual(values = c("obs" = "skyblue", "pred" = "darkorange"), labels = c("obs" = "Observations", "pred" = "Prédictions")) +
+  scale_fill_manual(values = c("IC" = "lightgray"), labels = c("IC" = "95 % IC")) +
+  labs(
+    title = "Production de l'industrie pharmaceutique", 
+    subtitle = "Prévisions à m+6", 
+    x = "",
+    y = "", 
+    color = "",
+    fill = "") +
+  guides(color = guide_legend(order = 1), fill = guide_legend(order = 2)) +
   theme_minimal() +
-  theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+  theme(
+    plot.title = element_text(hjust = 0.5), 
+    plot.subtitle = element_text(hjust = 0.5), 
+    legend.position = "bottom")
 ```
