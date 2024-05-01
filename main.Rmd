@@ -148,7 +148,7 @@ p <- rownames(AICs)[lowest_cell[1]]
 p <- sub("^p=", "", p)
 q <- colnames(AICs)[lowest_cell[2]]
 q <- sub("^q=", "", q)
-cat(paste0("\nBest model according to AIC is an ARMA(",p, ",", q, ").\n\n"))
+cat(paste0("\nBest model according to AIC is an ARMA(",p,",",q,").\n\n"))
 
 print(BICs)
 lowest_cell <- which(as.matrix(BICs) == min(as.matrix(BICs)), arr.ind = TRUE)
@@ -156,7 +156,7 @@ p <- rownames(BICs)[lowest_cell[1]]
 p <- sub("^p=", "", p)
 q <- colnames(BICs)[lowest_cell[2]]
 q <- sub("^q=", "", q)
-cat(paste0("\nBest model according to BIC is an ARMA(",p, ",", q, ")."))
+cat(paste0("\nBest model according to BIC is an ARMA(",p,",",q,")."))
 ```
 
 On compare les modèles possibles selon l'erreur de prédiction calculées sur 5 dernières valeurs : c'est un ARMA(0,0) qui la minimise, c'est-à-dire un bruit blanc.
@@ -196,7 +196,7 @@ arima010 <- arima(log_series,c(0,1,0),include.mean=F)
 Concernant d'abord l'ajustement, on vérifie la significativité des coefficients les plus élevés : les modèles AR(11) et MA(1) passent ce test, qui n'a évidemment pas de sens pour un bruit blanc.
 
 ```{r}
-signif <- function(estim){
+signif <- function(estim) {
   coef <- estim$coef
   se <- sqrt(diag(estim$var.coef))
   t <- coef/se
@@ -259,31 +259,34 @@ $$
 \hat{X}_{t+2} = E(X_{t+2}|\hat{X}_{t+1},X_t,\ldots,X_{t-10}) = \hat{X}_{t+1} + \hat{ar}_1(\hat{X}_{t+1} - X_{t}) + \hat{ar}_2(X_{t} - X_{t-1}) + \cdots + \hat{ar}_{11}(X_{t-9} - X_{t-10})
 $$
 
-On élimine les coefficients ar5, ar6 et ar7 qui ne sont pas significatifs au seuil de 10 %, comme on l'a vu plus haut. Pour calculer l'intervalle de confiance, on néglige l'incertitude entourant les coefficients estimés, pour considérer seulement la variance des résidus. On écrit une fonction qui permet d'étendre facilement l'horizon de prédiction. On retient 6 mois, au prix d'un intervalle de confiance croissant fortement.
+On écrit une fonction qui élimine automatiquement les coefficients non-significatifs au seuil de 5 %. Pour calculer l'intervalle de confiance, on néglige l'incertitude entourant les coefficients estimés, pour considérer seulement la variance des résidus.
 
-**Je ne suis pas complètement sûr concernant l'IC, il faudrait peut-être plutôt :**
-
--   **h=1: sigma2**
-
--   **h=2: (1+ar1)\*sigma2**
-
--   **h=3: (1+ar2)(1+ar1)\*sigma2**
-
--   **etc.**
+**Le calcul ci-dessous est probablement faux concernant l'IC, il néglige le fait qu'à partir de l'horizon 2, la valeur prédite apparaît (1+ar1) fois. Il faudrait donc avoir, pour h=2, 1.96\*sqrt((1+ar1\^2)\*sigma2), et les choses deviennent plus compliquées ensuite.**
 
 ```{r}
+# Il serait plus propre de commencer par déterminer quels coefficients sont significatifs, de générer le vecteur correspondant, puis d'itérer dessus, au lieu de tout retester à chaque fois.
+
 forecast <- function(h) {
   for (j in 1:h) {
     T <- nrow(data)
     prev <- data$log_values[T]
-    for (i in c(1:4, 8:11)) {
-      prev <- prev + as.numeric(arima1110$coef[paste0("ar", i)]) * (data$log_values[T-i+1] - data$log_values[T-i])}
+    for (i in 1:11) {
+      coef <- arima1110$coef[paste0("ar", i)]
+      se <- sqrt(arima1110$var.coef[paste0("ar", i), paste0("ar", i)])
+      t <- coef/se
+      pval <- (1 - pnorm(abs(t)))*2
+      if (pval <= 0.05) {
+        prev <- prev + as.numeric(arima1110$coef[paste0("ar", i)]) * (data$log_values[T-i+1] - data$log_values[T-i])
+      }
+      else {if (j==1) {cat("ar", i, " rejected, p-value = ", pval, "\n", sep="")}}
+    }
     CIlow <- prev - j*1.96*sqrt(arima1110$sigma2)
     CIup <- prev + j*1.96*sqrt(arima1110$sigma2) 
     data <<- rbind(
       data,
       data.frame(dates = (max(data$dates)) + (1/12), values = exp(prev), log_values = prev, CIlow = exp(CIlow), CIup = exp(CIup)))
   }
+  cat("\nForecast complete")
 }
 
 forecast(6)
