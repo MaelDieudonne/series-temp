@@ -1,7 +1,7 @@
 **Pré-requis**
 
 ```{r include=FALSE}
-packages <- c("aTSA", "forecast", "ggplot2", "xts")
+packages <- c("aTSA", "forecast", "ggplot2", "gridExtra", "xts")
 installed_packages <- packages %in% rownames(installed.packages())
 
 if (any(installed_packages == FALSE)) {install.packages(packages[!installed_packages])}
@@ -57,8 +57,14 @@ raw_series <- ts(data$values, start = min(data$dates), frequency = 12)
 ## 1. Représentation de la série
 
 ```{r}
-plot(raw_series, main = name, xlab = "Dates", ylab = "Valeurs")
-plot(decompose(raw_series), xlab = "")
+autoplot(raw_series, xlab = "Dates", ylab = "Valeurs") +
+  labs(title = name, subtitle = "Série brute") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+autoplot(decompose(raw_series), xlab = "") +
+  labs(title = name, subtitle = "Série brute – Décomposition") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
 ```
 
 On remarque une tendance linéaire croissante, une augmentation progressive de la variance, et l'absence de saisonnalité.
@@ -69,14 +75,20 @@ On commence par une transformation logarithmique pour corriger l'hétéroscédas
 
 ```{r}
 log_series <- log(raw_series)
-plot(decompose(log_series), xlab = "")
+autoplot(decompose(log_series), xlab = "") +
+  labs(title = name, subtitle = "Série log-transformée – décomposition") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
 ```
 
 On différencie ensuite à l'ordre 1 pour éliminer la tendance.
 
 ```{r}
 diff_series <- diff(log_series, 1)
-plot(decompose(diff_series), xlab = "")
+autoplot(decompose(diff_series), xlab = "") +
+  labs(title = name, subtitle = "Série log-transformée puis 1-différenciée – décomposition") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
 ```
 
 On vérifie que le résultat convient à l'aide des tests usuels de stationnarité. La tendance a disparu mais il reste une légère dérive. On retient donc les tests avec dérive et sans tendance.
@@ -101,9 +113,17 @@ Les résultats permettent de rejeter l'hypothèse nulle de non-stationnarité po
 ## 3. Comparaison de la série initiale et de la série transformée
 
 ```{r}
-# par(mfrow = c(2, 1)) 
-plot(raw_series, main = "Série initiale", xlab = "", ylab = "")
-plot(diff_series, main = "Série transformée", xlab = "", ylab = "")
+plot1 <- autoplot(raw_series, xlab = "", ylab = "") +
+  labs(title = "Série brute") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+plot2 <- autoplot(diff_series, xlab = "", ylab = "") +
+  labs(title = "Série transformée") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+grid.arrange(plot1, plot2, ncol = 1)
 ```
 
 # Partie II : Modèle ARMA
@@ -113,9 +133,17 @@ plot(diff_series, main = "Série transformée", xlab = "", ylab = "")
 On représente les fonctions d'autocorrélation et d'auto-corrélation partielle.
 
 ```{r}
-# par(mfrow = c(2, 1))
-acf(diff_series, main = paste(name))
-pacf(diff_series, main = paste(name))
+plot1 <- ggAcf(diff_series) +
+  labs(title = "Autocorrélations", x = NULL, y = NULL) +
+  theme_minimal() +
+  theme(plot.title = ggplot2::element_text(hjust = 0.5))
+
+plot2 <- ggPacf(diff_series) +
+  labs(title = "Autocorrélations partielles", x = NULL, Y = NULL) +
+  theme_minimal() +
+  theme(plot.title = ggplot2::element_text(hjust = 0.5))
+
+grid.arrange(plot1, plot2, ncol = 1)
 ```
 
 On retient les valeurs de 1 pour *q* et 11 pour *p*. Ce n'est pas l'approche la plus parcimonieuse, mais le pic apparaissant au 11e retard pour les auto-corrélations partielles est bien prononcé (s'il apparaissait au 12e, on se serait plutôt inquiété d'une saisonnalité non-corrigée).
@@ -186,9 +214,9 @@ cat(paste0("\nBest model according to prediction error is an ARMA(",p, ",", q, "
 On retient ces trois modèles afin de vérifier leur validité et leur ajustement.
 
 ```{r}
-arima1110 <- arima(log_series,c(11,1,0),include.mean=F)
-arima011 <- arima(log_series,c(0,1,1),include.mean=F)
-arima010 <- arima(log_series,c(0,1,0),include.mean=F)
+arima1110 <- arima(log_series, c(11,1,0), include.mean=F)
+arima011 <- arima(log_series, c(0,1,1), include.mean=F)
+arima010 <- arima(log_series, c(0,1,0), include.mean=F)
 ```
 
 ## 3. Tests de validité et d'ajustement
@@ -264,32 +292,34 @@ On écrit une fonction qui élimine automatiquement les coefficients non-signifi
 **Le calcul ci-dessous est probablement faux concernant l'IC, il néglige le fait qu'à partir de l'horizon 2, la valeur prédite apparaît (1+ar1) fois. Il faudrait donc avoir, pour h=2, 1.96\*sqrt((1+ar1\^2)\*sigma2), et les choses deviennent plus compliquées ensuite.**
 
 ```{r}
-# Il serait plus propre de commencer par déterminer quels coefficients sont significatifs, de générer le vecteur correspondant, puis d'itérer dessus, au lieu de tout retester à chaque fois.
-
 forecast <- function(h) {
+  # On isole les coefficients statistiquement significatifs.
+  sig_coefs <- c()
+  for (i in 1:11) {
+    coef <- arima1110$coef[paste0("ar", i)]
+    se <- sqrt(arima1110$var.coef[paste0("ar", i), paste0("ar", i)])
+    t <- coef/se
+    pval <- (1 - pnorm(abs(t)))*2
+    if (pval <= 0.05) {sig_coefs <- c(sig_coefs, i)}
+    else {cat("ar", i, " rejected, p-value = ", pval, "\n", sep="")}
+  }
+  # On itère sur les horizons de prédiction.
   for (j in 1:h) {
     T <- nrow(data)
     prev <- data$log_values[T]
-    for (i in 1:11) {
-      coef <- arima1110$coef[paste0("ar", i)]
-      se <- sqrt(arima1110$var.coef[paste0("ar", i), paste0("ar", i)])
-      t <- coef/se
-      pval <- (1 - pnorm(abs(t)))*2
-      if (pval <= 0.05) {
-        prev <- prev + as.numeric(arima1110$coef[paste0("ar", i)]) * (data$log_values[T-i+1] - data$log_values[T-i])
-      }
-      else {if (j==1) {cat("ar", i, " rejected, p-value = ", pval, "\n", sep="")}}
-    }
+    # On itère sur les coefficients significatifs pour calculer la valeur prédite.
+    for (k in sig_coefs) {prev <- prev + as.numeric(arima1110$coef[paste0("ar", k)]) * (data$log_values[T-k+1] - data$log_values[T-k])}
+    # On approxime l'intervalle de confiance à partir de la variance dess résidus.
     CIlow <- prev - j*1.96*sqrt(arima1110$sigma2)
     CIup <- prev + j*1.96*sqrt(arima1110$sigma2) 
     data <<- rbind(
       data,
       data.frame(dates = (max(data$dates)) + (1/12), values = exp(prev), log_values = prev, CIlow = exp(CIlow), CIup = exp(CIup)))
   }
-  cat("\nForecast complete")
+  cat("\nForecast complete for h = ", h, ".", sep="")
 }
 
-forecast(6)
+test <- forecast(6)
 ```
 
 On représente finalement les résultats. Le paramètre *r* permet de choisir la durée représentée, prédictions incluses, soit ici 24 mois d'observations et 6 mois de prédiction.
