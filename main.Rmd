@@ -1,7 +1,7 @@
 **Pré-requis**
 
 ```{r include=FALSE}
-packages <- c("astsa", "aTSA", "forecast", "fUnitRoots", "ggplot2", "MASS", "xts")
+packages <- c("aTSA", "forecast", "ggplot2", "xts")
 installed_packages <- packages %in% rownames(installed.packages())
 
 if (any(installed_packages == FALSE)) {install.packages(packages[!installed_packages])}
@@ -237,24 +237,14 @@ $$
 $$
 
 ```{r}
-# Chunk pour réinitialiser, à supprimer
-data <- read.csv("valeurs_mensuelles.csv", sep = ";")
-data <- data[-c(1:3), -3]
-colnames(data) <- c("dates", "values")
-data <- data[order(data$dates), ]
-rownames(data) <- NULL
-data$dates <- as.yearmon(data$dates)
-data$values <- as.numeric(data$values)
-data <- data[1:which(data$dates == "Dec 2019"), ]
-raw_series <- ts(data$values, start = min(data$dates), frequency = 12)
-log_series <- log(raw_series)
-arima1110 <- arima(log_series,c(11,1,0),include.mean=F)
-```
-
-```{r}
 data$log_values <- log(data$values)
 data$CIlow <- NA
 data$CIup <- NA
+data$dummy <- 0
+
+data$CIlow[nrow(data)] <- data$values[nrow(data)]
+data$CIup[nrow(data)] <- data$values[nrow(data)]
+data$dummy[nrow(data)] <- 1
 ```
 
 ```{r}
@@ -268,29 +258,22 @@ forecast <- function(h) {
     CIup <- prev + j*1.96*sqrt(arima1110$sigma2) 
     data <<- rbind(
       data,
-      data.frame(dates = (max(data$dates)) + (1/12), values = exp(prev), log_values = prev, CIlow = exp(CIlow), CIup = exp(CIup)))
+      data.frame(dates = (max(data$dates)) + (1/12), values = exp(prev), log_values = prev, CIlow = exp(CIlow), CIup = exp(CIup), dummy = 1))
   }
 }
-forecast(5)
 
-subset_data[(nrow(data) - 25):nrow(data), ]
+forecast(6)
+```
 
-ggplot(data = subset_data, aes(x=dates, y=values)) +
-  geom_line() +
-  geom_ribbon(aes(ymin = CIlow, ymax = CIup), fill = "lightgray", alpha = 0.5) +
-  geom_line(aes(y = CIlow), color = "lightgreen", linetype = "dashed") +
-  geom_line(aes(y = CIup), color = "lightgreen", linetype = "dashed") +
-  labs(title = "Prévisions à t+5", x = "", y = "") +
+```{r}
+subset_data <- data[(nrow(data) - 25):nrow(data), ]
+ggplot(data = subset_data) +
+  geom_line(data = subset_data[0:(nrow(subset_data)-6), ], aes(x=dates, y=values), color = "skyblue") +
+  geom_line(data = subset_data[(nrow(subset_data)-6):nrow(subset_data), ], aes(x=dates, y=values), color = "orange") +
+  geom_line(aes(x=dates, y = CIlow), color = "lightgreen", linetype = "dashed") +
+  geom_line(aes(x=dates, y = CIup), color = "lightgreen", linetype = "dashed") +
+  geom_ribbon(aes(x=dates, ymin = CIlow, ymax = CIup), fill = "lightgray", alpha = 0.5) +
+  labs(title = "Production de l'industrie pharmaceutique", subtitle = "Prévisions à m+6", x = "", y = "") +
   theme_minimal() +
-  theme(plot.title = element_text(hjust = 0.5))
-
-ggplot(data = subset_data, aes(x = dates, y = values)) +
-  geom_line(aes(colour = ifelse(seq_along(values) > (length(values) - 5), "Prédictions", "Observations")), size = 0.5) +
-  geom_ribbon(aes(ymin = CIlow, ymax = CIup), fill = "lightgray", alpha = 0.5) +
-  geom_line(aes(y = CIlow), color = "lightgreen", linetype = "dashed") +
-  geom_line(aes(y = CIup), color = "lightgreen", linetype = "dashed") +
-  scale_colour_manual(values = c("blue", "black"), guide = FALSE) +
-  labs(title = "Prévisions à t+5", x = "", y = "") +
-  theme_minimal() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
 ```
