@@ -268,10 +268,13 @@ On commence par préparer un dataframe pour stocker les valeurs prédites et les
 
 ```{r}
 data$log_values <- log(data$values)
+data$var <- NA
 data$CIlow <- NA
 data$CIup <- NA
 data$CIlow[nrow(data)] <- data$values[nrow(data)]
 data$CIup[nrow(data)] <- data$values[nrow(data)]
+
+arima1110$coef["ar0"] <- 1
 ```
 
 On passe à la prédiction à l'aide du modèle AR(11) retenu. Il s'écrit ainsi :
@@ -283,13 +286,16 @@ $$
 On en déduit l'expression des termes prédits :
 
 $$
-\hat{X}_{t+1} = E(X_{t+1}|X_t,\ldots,X_{t-11}) = X_t + \hat{ar}_1(X_t - X_{t-1}) + \hat{ar}_2(X_{t-1} - X_{t-2}) + \cdots + \hat{ar}_{11}(X_{t-10} - X_{t-11}) \\
-\hat{X}_{t+2} = E(X_{t+2}|\hat{X}_{t+1},X_t,\ldots,X_{t-10}) = \hat{X}_{t+1} + \hat{ar}_1(\hat{X}_{t+1} - X_{t}) + \hat{ar}_2(X_{t} - X_{t-1}) + \cdots + \hat{ar}_{11}(X_{t-9} - X_{t-10})
+\hat{X}_{t+1} = \mathbb{E}(X_{t+1}|X_t,\ldots,X_{t-11}) = X_t + \hat{ar}_1(X_t - X_{t-1}) + \hat{ar}_2(X_{t-1} - X_{t-2}) + \cdots + \hat{ar}_{11}(X_{t-10} - X_{t-11}) \\
+\hat{X}_{t+2} = \mathbb{E}(X_{t+2}|X_t,\ldots,X_{t-10}) = \hat{X}_{t+1} + \hat{ar}_1(\hat{X}_{t+1} - X_{t}) + \hat{ar}_2(X_{t} - X_{t-1}) + \cdots + \hat{ar}_{11}(X_{t-9} - X_{t-10}) \\
+\cdots
 $$
 
-On écrit une fonction qui élimine automatiquement les coefficients non-significatifs au seuil de 5 %. Pour calculer l'intervalle de confiance, on néglige l'incertitude entourant les coefficients estimés, pour considérer seulement la variance des résidus.
+On écrit une fonction qui élimine automatiquement les coefficients non-significatifs au seuil de 5 %. Pour calculer l'intervalle de confiance, on néglige l'incertitude entourant les coefficients estimés, pour considérer seulement la variance des résidus et des prédictions précédentes. D'après les calculs qui précèdent, l'expression générale de la variance est la suivante (en posant ar0 = 1 et en négligeant les termes connus plutôt qu'estimés).
 
-**Le calcul ci-dessous est probablement faux concernant l'IC, il néglige le fait qu'à partir de l'horizon 2, la valeur prédite apparaît (1+ar1) fois. Il faudrait donc avoir, pour h=2, 1.96\*sqrt((1+ar1\^2)\*sigma2), et les choses deviennent plus compliquées ensuite.**
+$$
+\mathbb{V}(\hat{X}_{t+h}) = (\hat{ar}_{0}^2+\hat{ar}_{1}^2)\mathbb{V}(\hat{X}_{t+h-1}) + (\hat{ar}_{1}^2+\hat{ar}_{2}^2)\mathbb{V}(\hat{X}_{t+h-2}) + \cdots + (\hat{ar}_{10}^2+\hat{ar}_{11}^2)\mathbb{V}(\hat{X}_{t+h-11}) + \mathbb{V}(\varepsilon_t)
+$$
 
 ```{r}
 forecast <- function(h) {
@@ -306,23 +312,31 @@ forecast <- function(h) {
   # On itère sur les horizons de prédiction.
   for (j in 1:h) {
     T <- nrow(data)
-    prev <- data$log_values[T]
     # On itère sur les coefficients significatifs pour calculer la valeur prédite.
+    prev <- data$log_values[T]
     for (k in sig_coefs) {prev <- prev + as.numeric(arima1110$coef[paste0("ar", k)]) * (data$log_values[T-k+1] - data$log_values[T-k])}
-    # On approxime l'intervalle de confiance à partir de la variance dess résidus.
-    CIlow <- prev - j*1.96*sqrt(arima1110$sigma2)
-    CIup <- prev + j*1.96*sqrt(arima1110$sigma2) 
+    # On calcule la variance puis l'intervalle de confiance.
+    if (j == 1) {var <- arima1110$sigma2}
+    if (j > 1) {
+      var <- 0
+      for (l in 0:(j-2)) {var <- var + ((arima1110$coef[paste0("ar", l)]**2 + arima1110$coef[paste0("ar", l+1)]**2) * data$var[T-l]) + arima1110$sigma2}
+    }
+    CIlow <- prev - 1.96*sqrt(var)
+    CIup <- prev + 1.96*sqrt(var)
     data <<- rbind(
       data,
-      data.frame(dates = (max(data$dates)) + (1/12), values = exp(prev), log_values = prev, CIlow = exp(CIlow), CIup = exp(CIup)))
+      data.frame(dates = (max(data$dates)) + (1/12), values = exp(prev), log_values = prev, var = var, CIlow = exp(CIlow), CIup = exp(CIup)))
   }
   cat("\nForecast complete for h = ", h, ".", sep="")
 }
 
-test <- forecast(6)
+forecast(6)
+rownames(data) <- NULL
+
+print(tail(data[, -which(names(data) == "log_values")], 10))
 ```
 
-On représente finalement les résultats. Le paramètre *r* permet de choisir la durée représentée, prédictions incluses, soit ici 24 mois d'observations et 6 mois de prédiction.
+On représente finalement les résultats. Le paramètre *r* permet de choisir la durée représentée, prédictions incluses, soit ici 24 mois d'observations et 6 mois de prédiction. On applique une transformation exponentielle aux prédictions et aux bornes de l'intervalle de confiance pour retrouver des valeurs cohérentes avec la série initiale.
 
 ```{r}
 r <- 30
@@ -338,7 +352,7 @@ ggplot(data = subset_data) +
   scale_fill_manual(values = c("IC" = "lightgray"), labels = c("IC" = "95 % IC")) +
   labs(
     title = "Production de l'industrie pharmaceutique", 
-    subtitle = "Prévisions à m+6", 
+    subtitle = "Prévisions à 6 mois", 
     x = "",
     y = "", 
     color = "",
