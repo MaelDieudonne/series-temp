@@ -291,7 +291,15 @@ $$
 \cdots
 $$
 
-On écrit une fonction qui élimine automatiquement les coefficients non-significatifs au seuil de 5 %. Pour calculer l'intervalle de confiance, on néglige l'incertitude entourant les coefficients estimés, pour considérer seulement la variance des résidus et des prédictions précédentes. D'après les calculs qui précèdent, l'expression générale de la variance est la suivante (en posant ar0 = 1 et en négligeant les termes connus plutôt qu'estimés).
+On écrit une fonction qui élimine automatiquement les coefficients non-significatifs au seuil de 5 %. Pour calculer l'intervalle de confiance, on néglige l'incertitude entourant les coefficients estimés, pour considérer seulement la variance des résidus et des prédictions précédentes. C'est une pratique habituelle, car la variance des coefficients estimés est généralement très inférieure à celle des résidus. Cette hypothèse n'est pas vérifiée ici. On la maintient tout de même, pour éviter de complexifier de manière déraisonnable les calculs.
+
+```{r}
+cat("Variance des résidus =", arima1110$sigma2, "\n")
+cat("Variance des coefficients = \n")
+print(diag(arima1110$var.coef))
+```
+
+L'expression générale de la variance est la suivante. Pour l'appliquer, on pose ar0 = 1 et on néglige les termes connus plutôt que prédits lorsque l'horizon *h* est inférieur à 11.
 
 $$
 \hat{\mathbb{V}}[\hat{X}_{t+h}] = (\hat{ar}_{0}^2+\hat{ar}_{1}^2)\hat{\mathbb{V}}[\hat{X}_{t+h-1}] + (\hat{ar}_{1}^2+\hat{ar}_{2}^2)\hat{\mathbb{V}}[\hat{X}_{t+h-2}] + \cdots + (\hat{ar}_{10}^2+\hat{ar}_{11}^2)\hat{\mathbb{V}}[\hat{X}_{t+h-11}] + \mathbb{V}[\varepsilon_t] \\
