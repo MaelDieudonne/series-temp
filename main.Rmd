@@ -286,15 +286,16 @@ $$
 On en déduit l'expression des termes prédits :
 
 $$
-\hat{X}_{t+1} = \mathbb{E}(X_{t+1}|X_t,\ldots,X_{t-11}) = X_t + \hat{ar}_1(X_t - X_{t-1}) + \hat{ar}_2(X_{t-1} - X_{t-2}) + \cdots + \hat{ar}_{11}(X_{t-10} - X_{t-11}) \\
-\hat{X}_{t+2} = \mathbb{E}(X_{t+2}|X_t,\ldots,X_{t-10}) = \hat{X}_{t+1} + \hat{ar}_1(\hat{X}_{t+1} - X_{t}) + \hat{ar}_2(X_{t} - X_{t-1}) + \cdots + \hat{ar}_{11}(X_{t-9} - X_{t-10}) \\
+\hat{X}_{t+1} = \mathbb{E}[X_{t+1}|X_t,\ldots,X_{t-11}] = X_t + \hat{ar}_1(X_t - X_{t-1}) + \hat{ar}_2(X_{t-1} - X_{t-2}) + \cdots + \hat{ar}_{11}(X_{t-10} - X_{t-11}) \\
+\hat{X}_{t+2} = \mathbb{E}[X_{t+2}|X_t,\ldots,X_{t-10}] = \hat{X}_{t+1} + \hat{ar}_1(\hat{X}_{t+1} - X_{t}) + \hat{ar}_2(X_{t} - X_{t-1}) + \cdots + \hat{ar}_{11}(X_{t-9} - X_{t-10}) \\
 \cdots
 $$
 
 On écrit une fonction qui élimine automatiquement les coefficients non-significatifs au seuil de 5 %. Pour calculer l'intervalle de confiance, on néglige l'incertitude entourant les coefficients estimés, pour considérer seulement la variance des résidus et des prédictions précédentes. D'après les calculs qui précèdent, l'expression générale de la variance est la suivante (en posant ar0 = 1 et en négligeant les termes connus plutôt qu'estimés).
 
 $$
-\mathbb{V}(\hat{X}_{t+h}) = (\hat{ar}_{0}^2+\hat{ar}_{1}^2)\mathbb{V}(\hat{X}_{t+h-1}) + (\hat{ar}_{1}^2+\hat{ar}_{2}^2)\mathbb{V}(\hat{X}_{t+h-2}) + \cdots + (\hat{ar}_{10}^2+\hat{ar}_{11}^2)\mathbb{V}(\hat{X}_{t+h-11}) + \mathbb{V}(\varepsilon_t)
+\hat{\mathbb{V}}[\hat{X}_{t+h}] = (\hat{ar}_{0}^2+\hat{ar}_{1}^2)\hat{\mathbb{V}}[\hat{X}_{t+h-1}] + (\hat{ar}_{1}^2+\hat{ar}_{2}^2)\hat{\mathbb{V}}[\hat{X}_{t+h-2}] + \cdots + (\hat{ar}_{10}^2+\hat{ar}_{11}^2)\hat{\mathbb{V}}[\hat{X}_{t+h-11}] + \mathbb{V}[\varepsilon_t] \\
+IC_{0.95}(\mathbb{V}[\hat{X}_{t+h}]) = \left[ \hat{X}_{t+h} \pm 1.96\sqrt{\hat{\mathbb{V}}[\hat{X}_{t+h}]} \right]
 $$
 
 ```{r}
@@ -345,8 +346,8 @@ subset_data <- data[(nrow(data) - r):nrow(data), ]
 ggplot(data = subset_data) +
   geom_line(data = subset_data[0:(nrow(subset_data)-6), ], aes(x=dates, y=values, color = "obs")) +
   geom_line(data = subset_data[(nrow(subset_data)-6):nrow(subset_data), ], aes(x=dates, y=values, color = "pred")) +
-  geom_line(aes(x=dates, y = CIlow), color = "darkgrey", linetype = "dashed") +
-  geom_line(aes(x=dates, y = CIup), color = "darkgrey", linetype = "dashed") +
+  geom_line(aes(x=dates, y = CIlow), color = "limegreen", linetype = "dashed") +
+  geom_line(aes(x=dates, y = CIup), color = "limegreen", linetype = "dashed") +
   geom_ribbon(aes(x=dates, ymin = CIlow, ymax = CIup, fill = "IC"), alpha = 0.5) +
   scale_color_manual(values = c("obs" = "skyblue", "pred" = "darkorange"), labels = c("obs" = "Observations", "pred" = "Prédictions")) +
   scale_fill_manual(values = c("IC" = "lightgray"), labels = c("IC" = "95 % IC")) +
