@@ -149,7 +149,7 @@ plot2 <- ggPacf(diff_series) +
 grid.arrange(plot1, plot2, ncol = 1)
 ```
 
-On retient les valeurs de 1 pour $$q$$ et 11 pour $$p$$. Ce n'est pas l'approche la plus parcimonieuse, mais le pic apparaissant au 11e retard pour les auto-corrélations partielles est bien prononcé (s'il apparaissait au 12e, on se serait plutôt inquiété d'une saisonnalité non-corrigée).
+On retient les valeurs de 1 pour q et 11 pour p. Ce n'est pas l'approche la plus parcimonieuse, mais le pic apparaissant au 11e retard pour les auto-corrélations partielles est bien prononcé (s'il apparaissait au 12e, on se serait plutôt inquiété d'une saisonnalité non-corrigée).
 
 ## 2. Estimation des modèles
 
@@ -190,7 +190,7 @@ q <- sub("^q=", "", q)
 cat(paste0("\nBest model according to BIC is an ARMA(",p,",",q,")."))
 ```
 
-On compare les modèles possibles selon l'erreur de prédiction calculées sur 5 dernières valeurs : c'est un $$ARMA(0,0)$$ qui la minimise, c'est-à-dire un bruit blanc.
+On compare les modèles possibles selon l'erreur de prédiction calculées sur 5 dernières valeurs : c'est un ARMA(0,0) qui la minimise, c'est-à-dire un bruit blanc.
 
 ```{r}
 values <- data$values[(nrow(data) - 4):nrow(data)]
@@ -224,7 +224,7 @@ arima010 <- arima(log_series, c(0,1,0), include.mean=F)
 
 ## 3. Tests de validité et d'ajustement
 
-Concernant d'abord l'ajustement, on vérifie la significativité des coefficients les plus élevés : les modèles $$AR(11)$$ et $$MA(1)$$ passent ce test, qui n'a évidemment pas de sens pour un bruit blanc.
+Concernant d'abord l'ajustement, on vérifie la significativité des coefficients les plus élevés : les modèles AR(11) et MA(1) passent ce test, qui n'a évidemment pas de sens pour un bruit blanc.
 
 ```{r}
 signif <- function(estim) {
@@ -240,7 +240,7 @@ cat("\n")
 signif(arima011)
 ```
 
-On considère maintenant la validité, c'est-à-dire l'absence d'autocorrélation entre les résidus. On utilise un test Portemanteau, conduisant à rejeter le $$MA(1)$$ et l'$$ARMA(0,0)$$.
+On considère maintenant la validité, c'est-à-dire l'absence d'autocorrélation entre les résidus. On utilise un test Portemanteau, conduisant à rejeter le MA(1) et l'ARMA(0,0).
 
 ```{r}
 Qtests <- function(series, k, fitdf = 0) {
@@ -259,13 +259,57 @@ cat("\nARMA(0,0)\n")
 Qtests(arima010$residuals, 24, fitdf=0)
 ```
 
-On procède à une dernière vérification avec la fonction auto.arima() du package forecast : elle retient le $$MA(1)$$ que l'on vient d'écarter.
+On procède à une dernière vérification avec la fonction auto.arima() du package forecast : elle retient le MA(1) que l'on vient d'écarter.
 
 ```{r}
 auto.arima(log_series, trace = TRUE)
 ```
 
 # Partie III : Prévision
+
+## 1. Région de confiance de niveau α
+
+Le modèle AR(11) retenu s'écrit ainsi :
+
+$$
+\nabla X_{t+1} = ar_1 \nabla X_t + ar_2 \nabla X_{t-1} + \cdots + ar_{11} \nabla X_{t-10} + \varepsilon_t
+$$
+
+On en déduit l'expression des termes prédits :
+
+$$
+\hat{X}_{t+1} = \mathbb{E}[X_{t+1}|X_t,\ldots,X_{t-11}] = X_t + \hat{ar}_1(X_t - X_{t-1}) + \hat{ar}_2(X_{t-1} - X_{t-2}) + \cdots + \hat{ar}_{11}(X_{t-10} - X_{t-11}) \\
+\hat{X}_{t+2} = \mathbb{E}[X_{t+2}|X_t,\ldots,X_{t-10}] = \hat{X}_{t+1} + \hat{ar}_1(\hat{X}_{t+1} - X_{t}) + \hat{ar}_2(X_{t} - X_{t-1}) + \cdots + \hat{ar}_{11}(X_{t-9} - X_{t-10}) \\
+\cdots
+$$
+
+Pour calculer la variance, on pose $$ar_0 = 1$$ et on élimine les termes connus plutôt que prédits lorsque l'horizon h est inférieur à 11.
+
+$$
+\hat{\mathbb{V}}[\hat{X}_{t+h}] = (\hat{ar}_{0}^2+\hat{ar}_{1}^2)\hat{\mathbb{V}}[\hat{X}_{t+h-1}] + (\hat{ar}_{1}^2+\hat{ar}_{2}^2)\hat{\mathbb{V}}[\hat{X}_{t+h-2}] + \cdots + (\hat{ar}_{10}^2+\hat{ar}_{11}^2)\hat{\mathbb{V}}[\hat{X}_{t+h-11}] + \mathbb{V}[\varepsilon_t]
+$$
+
+On obtient la région de confiance de niveau α :
+
+$$
+IC_{0.95}(\mathbb{V}[\hat{X}_{t+h}]) = \left[ \hat{X}_{t+h} \pm 1.96\sqrt{\hat{\mathbb{V}}[\hat{X}_{t+h}]} \right]
+$$
+
+## 2. Hypothèses
+
+Les calculs précédents requièrent plusieurs hypothèses.
+
+-   Le modèle est parfaitement connu.
+
+-   On considère les coefficients estimés comme les vrais coefficients du modèle. Ceci permet de négliger l'incertitude qui les entoure, pour considérer seulement la variance des résidus et des prévisions précédentes lors du calcul de la variance. C'est une pratique habituelle, car la variance des coefficients estimés est généralement très inférieure à celle des résidus. Cela n'est pas le cas ici, mais revenir sur cette hypothèse complexifierait de manière déraisonnable les calculs.
+
+```{r}
+cat("Variance des résidus =", arima1110$sigma2, "\n")
+cat("Variance des coefficients = \n")
+print(diag(arima1110$var.coef))
+```
+
+## 3. Représentation graphique
 
 On commence par préparer un dataframe pour stocker les valeurs prédites et les intervalles de confiance.
 
@@ -280,34 +324,7 @@ data$CIup[nrow(data)] <- data$values[nrow(data)]
 arima1110$coef["ar0"] <- 1
 ```
 
-On passe à la prédiction à l'aide du modèle $$AR(11)$$ retenu. Il s'écrit ainsi :
-
-$$
-\nabla X_{t+1} = ar_1 \nabla X_t + ar_2 \nabla X_{t-1} + \cdots + ar_{11} \nabla X_{t-10} + \varepsilon_t
-$$
-
-On en déduit l'expression des termes prédits :
-
-$$
-\hat{X}_{t+1} = \mathbb{E}[X_{t+1}|X_t,\ldots,X_{t-11}] = X_t + \hat{ar}_1(X_t - X_{t-1}) + \hat{ar}_2(X_{t-1} - X_{t-2}) + \cdots + \hat{ar}_{11}(X_{t-10} - X_{t-11}) \\
-\hat{X}_{t+2} = \mathbb{E}[X_{t+2}|X_t,\ldots,X_{t-10}] = \hat{X}_{t+1} + \hat{ar}_1(\hat{X}_{t+1} - X_{t}) + \hat{ar}_2(X_{t} - X_{t-1}) + \cdots + \hat{ar}_{11}(X_{t-9} - X_{t-10}) \\
-\cdots
-$$
-
-On écrit une fonction qui élimine automatiquement les coefficients non-significatifs au seuil de 5 %. Pour calculer l'intervalle de confiance, on néglige l'incertitude entourant les coefficients estimés, pour considérer seulement la variance des résidus et des prédictions précédentes. C'est une pratique habituelle, car la variance des coefficients estimés est généralement très inférieure à celle des résidus. Cette hypothèse n'est pas vérifiée ici. On la maintient tout de même, pour éviter de complexifier de manière déraisonnable les calculs.
-
-```{r}
-cat("Variance des résidus =", arima1110$sigma2, "\n")
-cat("Variance des coefficients = \n")
-print(diag(arima1110$var.coef))
-```
-
-L'expression générale de la variance est la suivante. Pour l'appliquer, on pose $$ar_0 = 1$$ et on néglige les termes connus plutôt que prédits lorsque l'horizon $$h$$ est inférieur à 11.
-
-$$
-\hat{\mathbb{V}}[\hat{X}_{t+h}] = (\hat{ar}_{0}^2+\hat{ar}_{1}^2)\hat{\mathbb{V}}[\hat{X}_{t+h-1}] + (\hat{ar}_{1}^2+\hat{ar}_{2}^2)\hat{\mathbb{V}}[\hat{X}_{t+h-2}] + \cdots + (\hat{ar}_{10}^2+\hat{ar}_{11}^2)\hat{\mathbb{V}}[\hat{X}_{t+h-11}] + \mathbb{V}[\varepsilon_t] \\
-IC_{0.95}(\mathbb{V}[\hat{X}_{t+h}]) = \left[ \hat{X}_{t+h} \pm 1.96\sqrt{\hat{\mathbb{V}}[\hat{X}_{t+h}]} \right]
-$$
+On écrit une fonction qui élimine automatiquement les coefficients non-significatifs au seuil de 5 %.
 
 ```{r}
 forecast <- function(h) {
@@ -321,7 +338,7 @@ forecast <- function(h) {
     if (pval <= 0.05) {sig_coefs <- c(sig_coefs, i)}
     else {cat("ar", i, " rejected, p-value = ", pval, "\n", sep="")}
   }
-  # On itère sur les horizons de prédiction.
+  # On itère sur les horizons de prévision.
   for (j in 1:h) {
     T <- nrow(data)
     # On itère sur les coefficients significatifs pour calculer la valeur prédite.
@@ -351,7 +368,7 @@ rownames(data) <- NULL
 print(tail(data[, -which(names(data) == "log_values")], 10))
 ```
 
-On représente finalement les résultats. Le paramètre $$r$$ permet de choisir la durée représentée, prédictions incluses, soit ici 24 mois d'observations et 6 mois de prédiction. On applique une transformation exponentielle aux prédictions et aux bornes de l'intervalle de confiance pour retrouver des valeurs cohérentes avec la série initiale.
+On représente finalement les résultats. Le paramètre r permet de choisir la durée représentée, prévisions incluses, soit ici 24 mois d'observations et 6 mois de prévision. On applique une transformation exponentielle aux prévisions et aux bornes de l'intervalle de confiance pour retrouver des valeurs cohérentes avec la série initiale.
 
 ```{r}
 r <- 30
@@ -359,11 +376,11 @@ subset_data <- data[(nrow(data) - r):nrow(data), ]
 
 ggplot(data = subset_data) +
   geom_line(data = subset_data[0:(nrow(subset_data)-6), ], aes(x=dates, y=values, color = "obs")) +
-  geom_line(data = subset_data[(nrow(subset_data)-6):nrow(subset_data), ], aes(x=dates, y=values, color = "pred")) +
+  geom_line(data = subset_data[(nrow(subset_data)-6):nrow(subset_data), ], aes(x=dates, y=values, color = "prev")) +
   geom_line(aes(x=dates, y = CIlow), color = "limegreen", linetype = "dashed") +
   geom_line(aes(x=dates, y = CIup), color = "limegreen", linetype = "dashed") +
   geom_ribbon(aes(x=dates, ymin = CIlow, ymax = CIup, fill = "IC"), alpha = 0.5) +
-  scale_color_manual(values = c("obs" = "skyblue", "pred" = "darkorange"), labels = c("obs" = "Observations", "pred" = "Prédictions")) +
+  scale_color_manual(values = c("obs" = "skyblue", "prev" = "darkorange"), labels = c("obs" = "Observations", "prev" = "Prévisions")) +
   scale_fill_manual(values = c("IC" = "lightgray"), labels = c("IC" = "95 % IC")) +
   labs(
     title = "Production de l'industrie pharmaceutique", 
@@ -379,3 +396,13 @@ ggplot(data = subset_data) +
     plot.subtitle = element_text(hjust = 0.5), 
     legend.position = "bottom")
 ```
+
+## 4. Question ouverte
+
+Imaginons qu'il existe une série $$Y_t$$ stationnaire entre $$t=1$$ et $$T$$ et telle que $$Y_{T+1}$$ soit disponible plus rapidement que $$X_{T+1}$$ : $$Y_{T+1}$$ permet d'améliorer la prévision de $$X_{T+1}$$ si $$(Y_t)$$ est corrélée instantanément avec $$(X_t)$$. Cette relation s'écrit :
+
+$$
+\hat{Y}_{T+1|\{X_u,Y_u,u≤t\}∪\{X_{T+1}\}}≠\hat{Y}_{T+1|\{Y_u,u≤t\}}
+$$
+
+On peut vérifier cette hypothèse à l'aide d'un test de Wald.
