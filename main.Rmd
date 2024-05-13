@@ -67,10 +67,10 @@ raw_series <- ts(data$values, start = min(data$dates), frequency = 12)
 ## 1. Représentation de la série
 
 ```{r}
-autoplot(raw_series, xlab = "Dates", ylab = "Valeurs") +
+autoplot(raw_series, xlab = "", ylab = "") +
   labs(title = name, subtitle = "Série brute") +
   theme_minimal() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
 
 autoplot(decompose(raw_series), xlab = "") +
   labs(title = name, subtitle = "Série brute – Décomposition") +
@@ -168,19 +168,19 @@ On compare les modèles possibles selon les critères d'information : c'est un $
 ```{r}
 pmax <- 11
 qmax <- 1
-mat <- matrix(NA, nrow=pmax+1,ncol=qmax+1) # matrice vide à remplir
-rownames(mat) <- paste0("p=",0:pmax) # renomme les lignes
-colnames(mat) <- paste0("q=",0:qmax) # renomme les colonnes
-AICs <- mat # matrice des AIC non remplie
-BICs <- mat # matrice des BIC non remplie
+mat <- matrix(NA, nrow=pmax+1,ncol=qmax+1)
+rownames(mat) <- paste0("p=",0:pmax)
+colnames(mat) <- paste0("q=",0:qmax)
+AICs <- mat
+BICs <- mat
 
-pqs <- expand.grid(0:pmax,0:qmax) # toutes les combinaisons possibles de p et q
-for (row in 1:dim(pqs)[1]){ # boucle pour chaque (p,q)
-  p <- pqs[row,1] # récupère p
-  q <- pqs[row,2] # récupère q
-  estim <- try(arima(log_series,c(p,1,q),include.mean = F)) # tente d’estimer l’ARIMA
-  AICs[p+1,q+1] <- if (class(estim)=="try-error") NA else estim$aic # assigne l’AIC
-  BICs[p+1,q+1] <- if (class(estim)=="try-error") NA else BIC(estim) # assigne le BIC
+pqs <- expand.grid(0:pmax,0:qmax)
+for (row in 1:dim(pqs)[1]){
+  p <- pqs[row,1]
+  q <- pqs[row,2]
+  estim <- try(arima(log_series,c(p,1,q),include.mean = F))
+  AICs[p+1,q+1] <- if (class(estim)=="try-error") NA else estim$aic
+  BICs[p+1,q+1] <- if (class(estim)=="try-error") NA else BIC(estim)
 }
 
 print(AICs)
@@ -200,7 +200,7 @@ q <- sub("^q=", "", q)
 cat(paste0("\nBest model according to BIC is an ARMA(",p,",",q,")."))
 ```
 
-On compare les modèles possibles selon l'erreur de prédiction calculées sur 5 dernières valeurs : c'est un $ARMA(0,0)$ qui la minimise, c'est-à-dire un bruit blanc.
+On compare les modèles possibles selon l'erreur de prédiction calculées sur 5 dernières valeurs : c'est l'$ARMA(11,0)$ qui la minimise.
 
 ```{r}
 values <- data$values[(nrow(data) - 4):nrow(data)]
@@ -212,7 +212,7 @@ pred_error <- mat
 for (row in 1:dim(pqs)[1]){
   p <- pqs[row,1]
   q <- pqs[row,2]
-  pred_error[p+1,q+1] <- sqrt(mean((predict(arima(diff_series,c(p,1,q),include.mean=F),n.ahead = 5)$pred[1:5] - values)^2))
+  pred_error[p+1,q+1] <- sqrt(mean((predict(arima(log_series,c(p,1,q),include.mean=F),n.ahead = 5)$pred[1:5] - values)^2))
 }
 
 pred_error
@@ -224,17 +224,16 @@ q <- sub("^q=", "", q)
 cat(paste0("\nBest model according to prediction error is an ARMA(",p, ",", q, ")."))
 ```
 
-On retient ces trois modèles afin de vérifier leur validité et leur ajustement.
+On retient ces deux modèles afin de vérifier leur validité et leur ajustement.
 
 ```{r}
 arima1110 <- arima(log_series, c(11,1,0), include.mean=F)
 arima011 <- arima(log_series, c(0,1,1), include.mean=F)
-arima010 <- arima(log_series, c(0,1,0), include.mean=F)
 ```
 
 ## 3. Tests de validité et d'ajustement
 
-Concernant d'abord l'ajustement, on vérifie la significativité des coefficients les plus élevés : les modèles $AR(11)$ et $MA(1)$ passent ce test, qui n'a évidemment pas de sens pour un bruit blanc.
+Concernant d'abord l'ajustement, on vérifie la significativité des coefficients les plus élevés : les modèles $AR(11)$ et $MA(1)$ passent ce test.
 
 ```{r}
 signif <- function(estim) {
@@ -250,7 +249,7 @@ cat("\n")
 signif(arima011)
 ```
 
-On considère maintenant la validité, c'est-à-dire l'absence d'autocorrélation entre les résidus. On utilise un test Portemanteau, conduisant à rejeter le $MA(1)$ et l'$ARMA(0,0)$.
+On considère maintenant la validité, c'est-à-dire l'absence d'autocorrélation entre les résidus. On utilise un test Portemanteau, conduisant à rejeter le $MA(1)$.
 
 ```{r}
 Qtests <- function(series, k, fitdf = 0) {
@@ -265,8 +264,6 @@ cat("ARMA(11,0)\n")
 Qtests(arima1110$residuals, 24, fitdf=11)
 cat("\nARMA(0,1)\n")
 Qtests(arima011$residuals, 24, fitdf=1)
-cat("\nARMA(0,0)\n")
-Qtests(arima010$residuals, 24, fitdf=0)
 ```
 
 On procède à une dernière vérification avec la fonction auto.arima() du package forecast : elle retient le $MA(1)$ que l'on vient d'écarter.
