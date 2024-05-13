@@ -10,7 +10,7 @@ output:
 
 # Pré-requis
 
-```{r, setup}
+```{r, setup, message=FALSE}
 packages <- c("aTSA", "forecast", "ggplot2", "gridExtra", "xts")
 installed_packages <- packages %in% rownames(installed.packages())
 
@@ -24,7 +24,7 @@ rm(installed_packages, packages)
 
 La série étudiée est l'indice CVS-CJO de la production industrielle dans l'industrie pharmaceutique (base 100 en 2021).
 
-```{r}
+```{r, results=FALSE}
 file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010767832?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=2&anneeFin=2024&revision=sansrevisions"
 name <- "Production de l'industrie pharmaceutique"
 
