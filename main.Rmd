@@ -5,11 +5,12 @@ date: "2024-05-13"
 output:
   pdf_document:
     latex_engine: xelatex
+    toc: true
 ---
 
 # Pré-requis
 
-```{r include=FALSE}
+```{r, setup}
 packages <- c("aTSA", "forecast", "ggplot2", "gridExtra", "xts")
 installed_packages <- packages %in% rownames(installed.packages())
 
@@ -23,7 +24,7 @@ rm(installed_packages, packages)
 
 La série étudiée est l'indice CVS-CJO de la production industrielle dans l'industrie pharmaceutique (base 100 en 2021).
 
-```{r include=FALSE}
+```{r}
 file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010767832?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=2&anneeFin=2024&revision=sansrevisions"
 name <- "Production de l'industrie pharmaceutique"
 
@@ -105,7 +106,7 @@ autoplot(decompose(diff_series), xlab = "") +
 
 On vérifie que le résultat convient à l'aide des tests usuels de stationnarité. La tendance a disparu mais il reste une légère dérive. On retient donc les tests avec dérive et sans tendance.
 
-```{r eval=FALSE}
+```{r}
 cat(paste("Dérive de la série :", mean(diff_series), "\n"))
 
 adf <- adf.test(coredata(diff_series), nlag = 24, output = FALSE)
@@ -379,7 +380,7 @@ print(tail(data[, -which(names(data) == "log_values")], 10))
 
 On représente finalement les résultats. Le paramètre $r$ permet de choisir la durée représentée, prévisions incluses, soit ici 24 mois d'observations et 6 mois de prévision. On applique une transformation exponentielle aux prévisions et aux bornes de l'intervalle de confiance pour retrouver des valeurs cohérentes avec la série initiale.
 
-```{r}
+```{r, warning=FALSE}
 r <- 30
 subset_data <- data[(nrow(data) - r):nrow(data), ]
 
