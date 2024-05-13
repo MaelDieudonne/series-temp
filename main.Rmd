@@ -1,4 +1,13 @@
-**Pré-requis**
+---
+title: "Projet de séries temporelles"
+author: "Maël Dieudonné"
+date: "2024-05-13"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+# Pré-requis
 
 ```{r include=FALSE}
 packages <- c("aTSA", "forecast", "ggplot2", "gridExtra", "xts")
@@ -10,7 +19,7 @@ invisible(lapply(packages, library, character.only = TRUE))
 rm(installed_packages, packages)
 ```
 
-**Téléchargement puis extraction des données**
+## Téléchargement puis extraction des données
 
 La série étudiée est l'indice CVS-CJO de la production industrielle dans l'industrie pharmaceutique (base 100 en 2021).
 
@@ -32,7 +41,7 @@ unlink(file_list[2], recursive = TRUE)
 rm(file_url, local_file_name, file_list)
 ```
 
-**Préparation des données**
+## Préparation des données
 
 On supprime l'entête, on s'assure du nom et du format des colonnes, on tronque la série en décembre 2019 (pour éliminer les fluctuation intempestives dues au covid) et on la convertit au format ts.
 
@@ -149,11 +158,11 @@ plot2 <- ggPacf(diff_series) +
 grid.arrange(plot1, plot2, ncol = 1)
 ```
 
-On retient les valeurs de 1 pour q et 11 pour p. Ce n'est pas l'approche la plus parcimonieuse, mais le pic apparaissant au 11e retard pour les auto-corrélations partielles est bien prononcé (s'il apparaissait au 12e, on se serait plutôt inquiété d'une saisonnalité non-corrigée).
+On retient les valeurs de 1 pour $q$ et 11 pour $p$. Ce n'est pas l'approche la plus parcimonieuse, mais le pic apparaissant au 11e retard pour les auto-corrélations partielles est bien prononcé (s'il apparaissait au 12e, on se serait plutôt inquiété d'une saisonnalité non-corrigée).
 
 ## 2. Estimation des modèles
 
-On compare les modèles possibles selon les critères d'information : c'est un $$AR(11)$$ qui minimise l'AIC et un $$MA(1)$$ qui minimise le BIC (ce qui est logique puisque le BIC pénalise davantage la complexité).
+On compare les modèles possibles selon les critères d'information : c'est un $AR(11)$ qui minimise l'AIC et un $MA(1)$ qui minimise le BIC (ce qui est logique puisque le BIC pénalise davantage la complexité).
 
 ```{r}
 pmax <- 11
@@ -190,7 +199,7 @@ q <- sub("^q=", "", q)
 cat(paste0("\nBest model according to BIC is an ARMA(",p,",",q,")."))
 ```
 
-On compare les modèles possibles selon l'erreur de prédiction calculées sur 5 dernières valeurs : c'est un ARMA(0,0) qui la minimise, c'est-à-dire un bruit blanc.
+On compare les modèles possibles selon l'erreur de prédiction calculées sur 5 dernières valeurs : c'est un $ARMA(0,0)$ qui la minimise, c'est-à-dire un bruit blanc.
 
 ```{r}
 values <- data$values[(nrow(data) - 4):nrow(data)]
@@ -224,7 +233,7 @@ arima010 <- arima(log_series, c(0,1,0), include.mean=F)
 
 ## 3. Tests de validité et d'ajustement
 
-Concernant d'abord l'ajustement, on vérifie la significativité des coefficients les plus élevés : les modèles AR(11) et MA(1) passent ce test, qui n'a évidemment pas de sens pour un bruit blanc.
+Concernant d'abord l'ajustement, on vérifie la significativité des coefficients les plus élevés : les modèles $AR(11)$ et $MA(1)$ passent ce test, qui n'a évidemment pas de sens pour un bruit blanc.
 
 ```{r}
 signif <- function(estim) {
@@ -240,7 +249,7 @@ cat("\n")
 signif(arima011)
 ```
 
-On considère maintenant la validité, c'est-à-dire l'absence d'autocorrélation entre les résidus. On utilise un test Portemanteau, conduisant à rejeter le MA(1) et l'ARMA(0,0).
+On considère maintenant la validité, c'est-à-dire l'absence d'autocorrélation entre les résidus. On utilise un test Portemanteau, conduisant à rejeter le $MA(1)$ et l'$ARMA(0,0)$.
 
 ```{r}
 Qtests <- function(series, k, fitdf = 0) {
@@ -259,7 +268,7 @@ cat("\nARMA(0,0)\n")
 Qtests(arima010$residuals, 24, fitdf=0)
 ```
 
-On procède à une dernière vérification avec la fonction auto.arima() du package forecast : elle retient le MA(1) que l'on vient d'écarter.
+On procède à une dernière vérification avec la fonction auto.arima() du package forecast : elle retient le $MA(1)$ que l'on vient d'écarter.
 
 ```{r}
 auto.arima(log_series, trace = TRUE)
@@ -267,9 +276,9 @@ auto.arima(log_series, trace = TRUE)
 
 # Partie III : Prévision
 
-## 1. Région de confiance de niveau α
+## 1. Région de confiance de niveau $\alpha$
 
-Le modèle AR(11) retenu s'écrit ainsi :
+Le modèle $AR(11)$ retenu s'écrit ainsi :
 
 $$
 \nabla X_{t+1} = ar_1 \nabla X_t + ar_2 \nabla X_{t-1} + \cdots + ar_{11} \nabla X_{t-10} + \varepsilon_t
@@ -283,13 +292,13 @@ $$
 \cdots
 $$
 
-Pour calculer la variance, on pose $$ar_0 = 1$$ et on élimine les termes connus plutôt que prédits lorsque l'horizon h est inférieur à 11.
+Pour calculer la variance, on pose $ar_0 = 1$ et on élimine les termes connus plutôt que prédits lorsque l'horizon $h$ est inférieur à 11.
 
 $$
 \hat{\mathbb{V}}[\hat{X}_{t+h}] = (\hat{ar}_{0}^2+\hat{ar}_{1}^2)\hat{\mathbb{V}}[\hat{X}_{t+h-1}] + (\hat{ar}_{1}^2+\hat{ar}_{2}^2)\hat{\mathbb{V}}[\hat{X}_{t+h-2}] + \cdots + (\hat{ar}_{10}^2+\hat{ar}_{11}^2)\hat{\mathbb{V}}[\hat{X}_{t+h-11}] + \mathbb{V}[\varepsilon_t]
 $$
 
-On obtient la région de confiance de niveau α :
+On obtient la région de confiance de niveau $\alpha$ :
 
 $$
 IC_{0.95}(\mathbb{V}[\hat{X}_{t+h}]) = \left[ \hat{X}_{t+h} \pm 1.96\sqrt{\hat{\mathbb{V}}[\hat{X}_{t+h}]} \right]
@@ -368,7 +377,7 @@ rownames(data) <- NULL
 print(tail(data[, -which(names(data) == "log_values")], 10))
 ```
 
-On représente finalement les résultats. Le paramètre r permet de choisir la durée représentée, prévisions incluses, soit ici 24 mois d'observations et 6 mois de prévision. On applique une transformation exponentielle aux prévisions et aux bornes de l'intervalle de confiance pour retrouver des valeurs cohérentes avec la série initiale.
+On représente finalement les résultats. Le paramètre $r$ permet de choisir la durée représentée, prévisions incluses, soit ici 24 mois d'observations et 6 mois de prévision. On applique une transformation exponentielle aux prévisions et aux bornes de l'intervalle de confiance pour retrouver des valeurs cohérentes avec la série initiale.
 
 ```{r}
 r <- 30
@@ -381,7 +390,7 @@ ggplot(data = subset_data) +
   geom_line(aes(x=dates, y = CIup), color = "limegreen", linetype = "dashed") +
   geom_ribbon(aes(x=dates, ymin = CIlow, ymax = CIup, fill = "IC"), alpha = 0.5) +
   scale_color_manual(values = c("obs" = "skyblue", "prev" = "darkorange"), labels = c("obs" = "Observations", "prev" = "Prévisions")) +
-  scale_fill_manual(values = c("IC" = "lightgray"), labels = c("IC" = "95 % IC")) +
+  scale_fill_manual(values = c("IC" = "lightgray"), labels = c("IC" = "IC 95 %")) +
   labs(
     title = "Production de l'industrie pharmaceutique", 
     subtitle = "Prévisions à 6 mois", 
@@ -399,7 +408,7 @@ ggplot(data = subset_data) +
 
 ## 4. Question ouverte
 
-Imaginons qu'il existe une série $$Y_t$$ stationnaire entre $$t=1$$ et $$T$$ et telle que $$Y_{T+1}$$ soit disponible plus rapidement que $$X_{T+1}$$ : $$Y_{T+1}$$ permet d'améliorer la prévision de $$X_{T+1}$$ si $$(Y_t)$$ est corrélée instantanément avec $$(X_t)$$. Cette relation s'écrit :
+Imaginons qu'il existe une série $Y_t$ stationnaire entre $t=1$ et $T$ et telle que $Y_{T+1}$ soit disponible plus rapidement que $X_{T+1}$ : $Y_{T+1}$ permet d'améliorer la prévision de $X_{T+1}$ si $(Y_t)$ est corrélée instantanément avec $(X_t)$. Cette relation s'écrit :
 
 $$
 \hat{Y}_{T+1|\{X_u,Y_u,u≤t\}∪\{X_{T+1}\}}≠\hat{Y}_{T+1|\{Y_u,u≤t\}}
