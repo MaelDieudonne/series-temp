@@ -6,6 +6,7 @@ output:
   pdf_document:
     latex_engine: xelatex
     toc: true
+    keep_tex: true
 ---
 
 # Pré-requis
@@ -284,9 +285,7 @@ $$
 
 On en déduit l'expression des termes prédits :
 
-$$\hat{X}_{t+1} = \mathbb{E}[X_{t+1}|X_t,\ldots,X_{t-11}] = X_t + \hat{ar}_1(X_t - X_{t-1}) + \hat{ar}_2(X_{t-1} - X_{t-2}) + \cdots + \hat{ar}_{11}(X_{t-10} - X_{t-11})$$
-$$\hat{X}_{t+2} = \mathbb{E}[X_{t+2}|X_t,\ldots,X_{t-10}] = \hat{X}_{t+1} + \hat{ar}_1(\hat{X}_{t+1} - X_{t}) + \hat{ar}_2(X_{t} - X_{t-1}) + \cdots + \hat{ar}_{11}(X_{t-9} - X_{t-10})$$
-$$\cdots$$
+$$\hat{X}_{t+1} = \mathbb{E}[X_{t+1}|X_t,\ldots,X_{t-11}] = X_t + \hat{ar}_1(X_t - X_{t-1}) + \hat{ar}_2(X_{t-1} - X_{t-2}) + \cdots + \hat{ar}_{11}(X_{t-10} - X_{t-11})$$ $$\hat{X}_{t+2} = \mathbb{E}[X_{t+2}|X_t,\ldots,X_{t-10}] = \hat{X}_{t+1} + \hat{ar}_1(\hat{X}_{t+1} - X_{t}) + \hat{ar}_2(X_{t} - X_{t-1}) + \cdots + \hat{ar}_{11}(X_{t-9} - X_{t-10})$$ $$\cdots$$
 
 Pour calculer la variance, on pose $ar_0 = 1$ et on élimine les termes connus plutôt que prédits lorsque l'horizon $h$ est inférieur à 11.
 
