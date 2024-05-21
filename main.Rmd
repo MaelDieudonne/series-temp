@@ -343,7 +343,7 @@ $$
 Dans le cas d'un $AR(11)$, ces formules se complexifient dramatiquement lorsqu'on allonge l'horizon de prédiction. On devrait obtenir le produit d'un polynôme $P$ des coefficients du modèle avec un bruit, permettant de se ramener à une loi normale centrer réduite pour déterminer les bornes de l'intervalle de confiance. Nous avons simplifié en calculant la variance de chaque prédiction de manière itérative, en reprenant la variance des prédictions précédentes, selon la formule suivante (où $ar_0 = 1$ et où les termes certains disparaissent lorsque l'horizon $h$ est inférieur à 11) :
 
 $$
-\hat{\mathbb{V}}[\hat{X}_{t+h}] = (ar_0+\hat{ar}_{1})^2\hat{\mathbb{V}}[\hat{X}_{t+h-1}] + (\hat{ar}_{1}+\hat{ar}_{2})^2\hat{\mathbb{V}}[\hat{X}_{t+h-2}] + \cdots + (\hat{ar}_{10}+\hat{ar}_{11})^2\hat{\mathbb{V}}[\hat{X}_{t+h-11}] + \mathbb{V}[\varepsilon_t]
+\hat{\mathbb{V}}[\hat{X}_{t+h}] = (ar_0+\hat{ar}_{1})^2*\hat{\mathbb{V}}[\hat{X}_{t+h-1}] + (\hat{ar}_{1}+\hat{ar}_{2})^2*\hat{\mathbb{V}}[\hat{X}_{t+h-2}] + \cdots + (\hat{ar}_{10}+\hat{ar}_{11})^2*\hat{\mathbb{V}}[\hat{X}_{t+h-11}] + \mathbb{V}[\varepsilon_t]
 $$
 
 Nous avons également supposé que $\hat{\mathbb{V}}[\hat{X}_{t+h}]$ suit une loi normale centrée de manière à déterminer la région de confiance de niveau $\alpha$ :
