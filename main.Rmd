@@ -287,10 +287,13 @@ cat("\nARMA(0,1)\n")
 Qtests(arima011$residuals, 24, fitdf=1)
 ```
 
-On procède à une dernière vérification avec la fonction auto.arima() du package forecast : elle retient le $MA(1)$ que l'on vient d'écarter.
+On procède à une dernière vérification avec la fonction auto.arima() du package forecast : elle retient un $SARIMA(0,1,1)(1,0,1)_{12}$, signalant que la saisonnalité n'est peut-être pas totalement corrigée. En éliminant les modèles saisonniers, elle retient un $ARIMA(2,1,2)$ (possibilité qui n'avait pas été envisagée devant les corrélogrammes).
 
 ```{r}
+cat("Estimation du modèle par auto.arima :")
 auto.arima(log_series, trace = TRUE)
+cat("\nEstimation du modèle par auto.arima, sans saisonnalité :")
+auto.arima(log_series, seasonal = FALSE, trace = TRUE)
 ```
 
 # Partie III : Prévision
