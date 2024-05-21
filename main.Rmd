@@ -134,7 +134,11 @@ Une explication possible à cette divergence réside dans la construction des te
 
 Une autre explication serait la persistance d'une légère dérive ou tendance malgré la différenciation, de sorte que les tests seraient mal spécifiés. On remarque en effet que les tests KPSS avec dérive et/ou tendance (= type 2 ou 3) permettent de rejeter l'hypothèse nulle de stationnarité, tandis que les tests ADF et PP demeurent concluants.
 
-On admet alors, devant ces résultats, que la série transformée est stationnaire.
+On admet alors, devant ces résultats, que la série transformée est stationnaire (d'autant que les résidus semblent bien distribués normalement).
+
+```{r}
+checkresiduals(diff_series, plot = TRUE)
+```
 
 ## 3. Comparaison de la série initiale et de la série transformée
 
@@ -355,7 +359,10 @@ $$
 Ces simplifications permettent d'étendre l'horizon de prédiction au-delà de 2. Elles consistent à négliger la dépendance entre les prédictions de différents horizons, ce qui contribue à amplifier la variance estimée. Elles sont justifiées dans la mesure où $P$ n'est pas très différent de 1. On vérifie en particulier :
 
 $$
-ar_0=1 \Rightarrow P(1) = 1 \\
+ar_0=1 \Rightarrow P(1) = 1
+$$
+
+$$
 \hat{ar}_{1} = -0,61193077 \Rightarrow P(2) = (ar_0+\hat{ar}_{1})^2 + 1 \approx 1,15 \Rightarrow \frac{1}{\sqrt{P(2)}} \approx 0,93
 $$
 
