@@ -291,31 +291,7 @@ auto.arima(log_series, trace = TRUE)
 
 # Partie III : Prévision
 
-## 1. Région de confiance de niveau $\alpha$
-
-Le modèle $AR(11)$ retenu s'écrit ainsi :
-
-$$
-\nabla X_{t+1} = ar_1 \nabla X_t + ar_2 \nabla X_{t-1} + \cdots + ar_{11} \nabla X_{t-10} + \varepsilon_t
-$$
-
-On en déduit l'expression des termes prédits :
-
-$$\hat{X}_{t+1} = \mathbb{E}[X_{t+1}|X_t,\ldots,X_{t-11}] = X_t + \hat{ar}_1(X_t - X_{t-1}) + \hat{ar}_2(X_{t-1} - X_{t-2}) + \cdots + \hat{ar}_{11}(X_{t-10} - X_{t-11})$$ $$\hat{X}_{t+2} = \mathbb{E}[X_{t+2}|X_t,\ldots,X_{t-10}] = \hat{X}_{t+1} + \hat{ar}_1(\hat{X}_{t+1} - X_{t}) + \hat{ar}_2(X_{t} - X_{t-1}) + \cdots + \hat{ar}_{11}(X_{t-9} - X_{t-10})$$ $$\cdots$$
-
-Pour calculer la variance, on pose $ar_0 = 1$ et on élimine les termes connus plutôt que prédits lorsque l'horizon $h$ est inférieur à 11.
-
-$$
-\hat{\mathbb{V}}[\hat{X}_{t+h}] = (\hat{ar}_{0}^2+\hat{ar}_{1}^2)\hat{\mathbb{V}}[\hat{X}_{t+h-1}] + (\hat{ar}_{1}^2+\hat{ar}_{2}^2)\hat{\mathbb{V}}[\hat{X}_{t+h-2}] + \cdots + (\hat{ar}_{10}^2+\hat{ar}_{11}^2)\hat{\mathbb{V}}[\hat{X}_{t+h-11}] + \mathbb{V}[\varepsilon_t]
-$$
-
-On obtient la région de confiance de niveau $\alpha$ :
-
-$$
-IC_{0.95}(\mathbb{V}[\hat{X}_{t+h}]) = \left[ \hat{X}_{t+h} \pm 1.96\sqrt{\hat{\mathbb{V}}[\hat{X}_{t+h}]} \right]
-$$
-
-## 2. Hypothèses
+## 1. Hypothèses
 
 Les calculs précédents requièrent plusieurs hypothèses.
 
@@ -331,6 +307,57 @@ cat("Variance des résidus =", arima1110$sigma2, "\n")
 cat("Variance des coefficients estimés = \n")
 print(diag(arima1110$var.coef))
 ```
+
+## 2. Région de confiance de niveau $\alpha$
+
+Le modèle $AR(11)$ retenu s'écrit ainsi :
+
+$$
+\nabla X_{t+1} = ar_1 \nabla X_t + ar_2 \nabla X_{t-1} + \cdots + ar_{11} \nabla X_{t-10} + \varepsilon_t
+$$
+
+On en déduit l'expression des termes prédits à l'horizon 2 :
+
+$$\hat{X}_{t+1} = \mathbb{E}[X_{t+1}|X_t,\ldots,X_{t-11}] = X_t + \hat{ar}_1(X_t - X_{t-1}) + \hat{ar}_2(X_{t-1} - X_{t-2}) + \cdots + \hat{ar}_{11}(X_{t-10} - X_{t-11})$$ $$\hat{X}_{t+2} = \mathbb{E}[X_{t+2}|X_t,\ldots,X_{t-10}] = \hat{X}_{t+1} + \hat{ar}_1(\hat{X}_{t+1} - X_{t}) + \hat{ar}_2(X_{t} - X_{t-1}) + \cdots + \hat{ar}_{11}(X_{t-9} - X_{t-10})$$
+
+On calcule ensuite la variance en éliminant les termes certains, et en utilisant le fait que le bruit résiduel d'un processus $ARMA$ est décorrelé mais identiquement distribué entre les périodes :
+
+$$
+\hat{\mathbb{V}}[\hat{X}_{t+1}] = \mathbb{V}[\hat{X}_{t+1} + \varepsilon_{t+1}] = \mathbb{V}[\varepsilon_{t+1}]
+$$
+
+$$
+\hat{\mathbb{V}}[\hat{X}_{t+2}] = \mathbb{V}[\hat{X}_{t+2} + \varepsilon_{t+2}] = \mathbb{V}[(1+\hat{ar}_{1})\varepsilon_{t+1} + \varepsilon_{t+2}] = (1+\hat{ar}_{1})^2*\mathbb{V}[\varepsilon_{t+1}] + \mathbb{V}[\varepsilon_{t+2}] = \left( (1+\hat{ar}_{1})^2 + 1 \right)*\mathbb{V}[\varepsilon_{t+1}]
+$$
+
+On en déduit finalement l'expression des intervalles de confiance :
+
+$$
+IC_{0.95}(\mathbb{V}[\hat{X}_{t+1}]) = \left[ \hat{X}_{t+1} \pm 1.96\sqrt{\sigma} \right]
+$$
+
+$$
+IC_{0.95}(\mathbb{V}[\hat{X}_{t+2}]) = \left[ \hat{X}_{t+2} \pm 1.96\frac{\sqrt{\sigma}}{\sqrt{(1+\hat{ar}_{1})^2 + 1}} \right]
+$$
+
+Dans le cas d'un $AR(11)$, ces formules se complexifient dramatiquement lorsqu'on allonge l'horizon de prédiction. On devrait obtenir le produit d'un polynôme $P$ des coefficients du modèle avec un bruit, permettant de se ramener à une loi normale centrer réduite pour déterminer les bornes de l'intervalle de confiance. Nous avons simplifié en calculant la variance de chaque prédiction de manière itérative, en reprenant la variance des prédictions précédentes, selon la formule suivante (où $ar_0 = 1$ et où les termes certains disparaissent lorsque l'horizon $h$ est inférieur à 11) :
+
+$$
+\hat{\mathbb{V}}[\hat{X}_{t+h}] = (ar_0+\hat{ar}_{1})^2\hat{\mathbb{V}}[\hat{X}_{t+h-1}] + (\hat{ar}_{1}+\hat{ar}_{2})^2\hat{\mathbb{V}}[\hat{X}_{t+h-2}] + \cdots + (\hat{ar}_{10}+\hat{ar}_{11})^2\hat{\mathbb{V}}[\hat{X}_{t+h-11}] + \mathbb{V}[\varepsilon_t]
+$$
+
+Nous avons également supposé que $\hat{\mathbb{V}}[\hat{X}_{t+h}]$ suit une loi normale centrée de manière à déterminer la région de confiance de niveau $\alpha$ :
+
+$$
+IC_{0.95}(\mathbb{V}[\hat{X}_{t+h}]) = \left[ \hat{X}_{t+h} \pm 1.96\sqrt{\hat{\mathbb{V}}[\hat{X}_{t+h}]} \right]
+$$
+
+Ces simplifications permettent d'étendre l'horizon de prédiction au-delà de 2. Elle sont justifiées dans la mesure où $P$ n'est pas très différent de 1. On vérifie en particulier :
+
+$$
+P(1) = 1 \\
+\hat{ar}_{1} = -0,61193077 \Longrightarrow P(2) = (1+\hat{ar}_{1})^2 + 1 \approx 1,15
+$$
 
 ## 3. Représentation graphique
 
@@ -371,7 +398,7 @@ forecast <- function(h) {
     if (j == 1) {var <- arima1110$sigma2}
     if (j > 1) {
       var <- 0
-      for (l in 0:(j-2)) {var <- var + ((arima1110$coef[paste0("ar", l)]**2 + arima1110$coef[paste0("ar", l+1)]**2) * data$var[T-l]) + arima1110$sigma2}
+      for (l in 0:(j-2)) {var <- var + (((arima1110$coef[paste0("ar", l)] + arima1110$coef[paste0("ar", l+1)])**2) * data$var[T-l]) + arima1110$sigma2}
     }
     CIlow <- prev - 1.96*sqrt(var)
     CIup <- prev + 1.96*sqrt(var)
@@ -428,7 +455,7 @@ ggplot(data = subset_data) +
     legend.position = "bottom")
 ```
 
-On procède à une vérification avec la fonction forecast du package éponyme : on retrouve les mêmes coefficients, mais des intervalles de confiance légèrement plus étroits.
+On procède à une vérification avec la fonction forecast du package éponyme : on retrouve les mêmes coefficients, mais des intervalles de confiance plus étroits. Ceci montre que les simplifications précédentes n'étaient pas déraisonnables, puisqu'elles aboutissent à des prédictions plus conservatrices.
 
 ```{r}
 # On supprimer la fonction précédemment définie et on génère à nouveau le modèle.
@@ -436,17 +463,7 @@ rm(forecast)
 arima1110 <- arima(log_series, c(11,1,0), include.mean=F)
 
 # On génère la prédiction et l'on applique une transformation exponentielle pour obtenir des valeurs cohérentes avec la série initiale.
-forecast <- forecast(
-  arima1110,
-  h = 6,
-  level = 95,
-  fan = FALSE,
-  xreg = NULL,
-  lambda = NULL,
-  bootstrap = FALSE,
-  npaths = 5000,
-  biasadj = NULL)
-
+forecast <- forecast(arima1110, h = 6, level = 95)
 forecast$mean <- exp(forecast$mean)
 forecast$lower <- exp(forecast$lower)
 forecast$upper <- exp(forecast$upper)
