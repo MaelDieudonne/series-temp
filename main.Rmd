@@ -25,10 +25,8 @@ rm(installed_packages, packages)
 
 La série étudiée est l'indice CVS-CJO de la production industrielle dans l'industrie pharmaceutique (base 100 en 2021).
 
-```{r, results=FALSE}
+```{r eval=FALSE}
 file_url <- "https://www.insee.fr/fr/statistiques/serie/telecharger/csv/010767832?ordre=antechronologique&transposition=donneescolonne&periodeDebut=1&anneeDebut=1990&periodeFin=2&anneeFin=2024&revision=sansrevisions"
-name <- "Production de l'industrie pharmaceutique"
-
 local_file_name <- "data.zip"
 download.file(file_url, local_file_name, mode = "wb", quiet = TRUE)
 
@@ -61,6 +59,8 @@ data$values <- as.numeric(data$values)
 data <- data[1:which(data$dates == "Dec 2019"), ]
 
 raw_series <- ts(data$values, start = min(data$dates), frequency = 12)
+
+name <- "Production de l'industrie pharmaceutique"
 ```
 
 # Partie I : données
@@ -94,7 +94,7 @@ autoplot(decompose(log_series), xlab = "") +
   theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
 ```
 
-On différencie ensuite à l'ordre 1 pour éliminer la tendance.
+On différencie ensuite à l'ordre 1 pour éliminer constante et tendance.
 
 ```{r}
 diff_series <- diff(log_series, 1)
@@ -105,24 +105,36 @@ autoplot(decompose(diff_series), xlab = "") +
   theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
 ```
 
-On vérifie que le résultat convient à l'aide des tests usuels de stationnarité. La tendance a disparu mais il reste une légère dérive. On retient donc les tests avec dérive et sans tendance.
+On vérifie que la constante et la tendance ont bien disparu à l'aide d'une régression linéaire : on peut effectivement rejeter les trois hypothèses de nullité de l'intercept (p-value = 0,279), du coefficient du temps (p-value = 0,677), et de nullité jointe (p-value = 0,6767).
 
 ```{r}
-cat(paste("Dérive de la série :", mean(diff_series), "\n"))
+time <- 1:length(coredata(diff_series))
+regression <- lm(coredata(diff_series) ~ time)
+summary(regression)
+```
 
+On procède aux tests usuels de stationnarité sans dérive ni tendance (= type 1 dans les fonctions du package aTSA qu'on utilise ici).
+
+```{r}
 adf <- adf.test(coredata(diff_series), nlag = 24, output = FALSE)
 pp <- pp.test(coredata(diff_series), lag.short = TRUE, output = FALSE)
 kpss <- kpss.test(coredata(diff_series), lag.short = TRUE, output = FALSE)
 
-cat("\nTest ADF with drift no trend\n")
-print(adf$type2)
-cat("\nTest PP with drift no trend\n")
-print(pp["type 2", ])
-cat("\nTest KPSS with drift no trend\n")
-print(kpss["type 2", ])
+cat("\nTest ADF with no drift nor trend\n")
+print(adf$type1)
+cat("\nTest PP with no drift nor trend\n")
+print(pp["type 1", ])
+cat("\nTest KPSS with no drift nor trend\n")
+print(kpss["type 1", ])
 ```
 
-Les résultats permettent de rejeter l'hypothèse nulle de non-stationnarité pour les test ADF et PP, mais pas l'hypothèse nulle de stationnarité avec le test KPSS.
+Les résultats permettent de rejeter l'hypothèse nulle de non-stationnarité des tests ADF et PP au seuil de 1 %. En revanche, ils conduisent à rejeter l'hypothèse nulle de stationnarité du test KPSS au seuil de 1 %.
+
+Une explication possible à cette divergence réside dans la construction des tests : les tests ADF et PP considèrent seulement la présence d'une racine unitaire, tandis que le test KPSS réagit aux évolutions de la variance. Il se pourrait donc que la transformation logarithmique n'ait pas suffit à éliminer l'hétéroscédasticité de la série initiale.
+
+Une autre explication serait la persistance d'une légère dérive ou tendance malgré la différenciation, de sorte que les tests seraient mal spécifiés. On remarque en effet que les tests KPSS avec dérive et/ou tendance (= type 2 ou 3) permettent de rejeter l'hypothèse nulle de stationnarité, tandis que les tests ADF et PP demeurent concluants.
+
+On admet alors, devant ces résultats, que la série transformée est stationnaire.
 
 ## 3. Comparaison de la série initiale et de la série transformée
 
@@ -160,7 +172,11 @@ plot2 <- ggPacf(diff_series) +
 grid.arrange(plot1, plot2, ncol = 1)
 ```
 
-On retient les valeurs de 1 pour $q$ et 11 pour $p$. Ce n'est pas l'approche la plus parcimonieuse, mais le pic apparaissant au 11e retard pour les auto-corrélations partielles est bien prononcé (s'il apparaissait au 12e, on se serait plutôt inquiété d'une saisonnalité non-corrigée).
+On retient les valeurs de 1 pour $q$ et 11 pour $p$.
+
+-   Concernant les autocorrélations, on néglige le pic apparaissant au 12 retard, car on sait qu'elles décroissent de manière exponentielle pour les processus ARMA, ce qui rend l'hypothèse $q=12$ extrêmement improbable.
+
+-   Concernant les autocorrélations partielles, le pic apparaissant au 11e retard est bien prononcé : il semble préférable d'en tenir compte, même si cela n'est pas l'approche la plus parcimonieuse (s'il apparaissait au 12e retard, on se serait plutôt inquiété d'une saisonnalité non-corrigée).
 
 ## 2. Estimation des modèles
 
@@ -201,7 +217,7 @@ q <- sub("^q=", "", q)
 cat(paste0("\nBest model according to BIC is an ARMA(",p,",",q,")."))
 ```
 
-On compare les modèles possibles selon l'erreur de prédiction calculées sur 5 dernières valeurs : c'est l'$ARMA(11,0)$ qui la minimise.
+On compare les modèles possibles selon l'erreur de prédiction calculées sur les 5 dernières valeurs : c'est l'$ARMA(11,0)$ qui la minimise.
 
 ```{r}
 values <- data$values[(nrow(data) - 4):nrow(data)]
@@ -234,7 +250,7 @@ arima011 <- arima(log_series, c(0,1,1), include.mean=F)
 
 ## 3. Tests de validité et d'ajustement
 
-Concernant d'abord l'ajustement, on vérifie la significativité des coefficients les plus élevés : les modèles $AR(11)$ et $MA(1)$ passent ce test.
+Concernant d'abord l'ajustement, on vérifie la significativité des coefficients les plus élevés : les modèles $AR(11)$ et $MA(1)$ passent ce test, avec des p-values de $<2.10^{-06}$ pour le coefficient $ar11$ et $10^{-08}$ pour le coefficient $ma1$.
 
 ```{r}
 signif <- function(estim) {
@@ -250,7 +266,7 @@ cat("\n")
 signif(arima011)
 ```
 
-On considère maintenant la validité, c'est-à-dire l'absence d'autocorrélation entre les résidus. On utilise un test Portemanteau, conduisant à rejeter le $MA(1)$.
+On considère maintenant la validité, c'est-à-dire l'absence d'autocorrélation entre les résidus, avec un test Portemanteau dont elle constitue l'hypothèse nulle. Il valide le modèle $AR(11)$ en permettant de rejeter $H_0$ au seuil de 5 % pour l'ensemble des lags jusqu'à 24, mais récuse le modèle $MA(1)$ en ne permettant pas de rejeter $H_0$ au seuil de 5 % pour $h\in\{12,18\}$ et de 10 % pour $h\in\{4,5,20,21\}$.
 
 ```{r}
 Qtests <- function(series, k, fitdf = 0) {
@@ -303,13 +319,16 @@ $$
 
 Les calculs précédents requièrent plusieurs hypothèses.
 
--   Le modèle est parfaitement connu.
+-   La structure du modèle est parfaitement connue.
 
--   On considère les coefficients estimés comme les vrais coefficients du modèle. Ceci permet de négliger l'incertitude qui les entoure, pour considérer seulement la variance des résidus et des prévisions précédentes lors du calcul de la variance. C'est une pratique habituelle, car la variance des coefficients estimés est généralement très inférieure à celle des résidus. Cela n'est pas le cas ici, mais revenir sur cette hypothèse complexifierait de manière déraisonnable les calculs.
+-   Les coefficients estimés sont les vrais coefficients du modèle. Cette hypothèse permet de négliger l'incertitude qui les entoure, pour considérer seulement la variance des résidus et des prévisions précédentes lors du calcul de l'écart-type. C'est une pratique habituelle, car la variance des coefficients estimés est généralement très inférieure à celle des résidus. Cela n'est pas le cas ici, mais revenir sur cette hypothèse complexifierait de manière déraisonnable les calculs...
+
+-   Les résidus sont gaussiens.
 
 ```{r}
+# On constate ici que la variance des résidus et des coefficients estimés sont du même ordre de grandeur.
 cat("Variance des résidus =", arima1110$sigma2, "\n")
-cat("Variance des coefficients = \n")
+cat("Variance des coefficients estimés = \n")
 print(diag(arima1110$var.coef))
 ```
 
@@ -328,7 +347,7 @@ data$CIup[nrow(data)] <- data$values[nrow(data)]
 arima1110$coef["ar0"] <- 1
 ```
 
-On écrit une fonction qui élimine automatiquement les coefficients non-significatifs au seuil de 5 %.
+On écrit une fonction qui élimine automatiquement les coefficients non-significatifs au seuil de 5 %, et qui applique une transformation exponentielle aux prévisions et aux bornes de l'intervalle de confiance afin de retrouver des valeurs cohérentes avec la série initiale.
 
 ```{r}
 forecast <- function(h) {
@@ -366,15 +385,15 @@ forecast <- function(h) {
   }
   cat("\nForecast complete for h = ", h, ".", sep="")
 }
+```
 
+On prédit jusqu'à l'horizon $h=6$ et l'on représente graphiquement les résultats (le paramètre $r$ permet de choisir la durée représentée, prévisions incluses, soit ici 24 mois d'observations et 6 mois de prévision).
+
+```{r, warning=FALSE}
 forecast(6)
 rownames(data) <- NULL
 print(tail(data[, -which(names(data) == "log_values")], 10))
-```
 
-On représente finalement les résultats. Le paramètre $r$ permet de choisir la durée représentée, prévisions incluses, soit ici 24 mois d'observations et 6 mois de prévision. On applique une transformation exponentielle aux prévisions et aux bornes de l'intervalle de confiance pour retrouver des valeurs cohérentes avec la série initiale.
-
-```{r, warning=FALSE}
 r <- 30
 subset_data <- data[(nrow(data) - r):nrow(data), ]
 
@@ -407,6 +426,32 @@ ggplot(data = subset_data) +
     plot.title = element_text(hjust = 0.5), 
     plot.subtitle = element_text(hjust = 0.5), 
     legend.position = "bottom")
+```
+
+On procède à une vérification avec la fonction forecast du package éponyme : on retrouve les mêmes coefficients, mais des intervalles de confiance légèrement plus étroits.
+
+```{r}
+# On supprimer la fonction précédemment définie et on génère à nouveau le modèle.
+rm(forecast)
+arima1110 <- arima(log_series, c(11,1,0), include.mean=F)
+
+# On génère la prédiction et l'on applique une transformation exponentielle pour obtenir des valeurs cohérentes avec la série initiale.
+forecast <- forecast(
+  arima1110,
+  h = 6,
+  level = 95,
+  fan = FALSE,
+  xreg = NULL,
+  lambda = NULL,
+  bootstrap = FALSE,
+  npaths = 5000,
+  biasadj = NULL)
+
+forecast$mean <- exp(forecast$mean)
+forecast$lower <- exp(forecast$lower)
+forecast$upper <- exp(forecast$upper)
+
+print(forecast)
 ```
 
 ## 4. Question ouverte
