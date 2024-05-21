@@ -337,11 +337,11 @@ $$
 On en déduit finalement l'expression des intervalles de confiance :
 
 $$
-IC_{0.95}(\mathbb{V}[\hat{X}_{t+1}]) = \left[ \hat{X}_{t+1} \pm 1.96\sqrt{\sigma} \right]
+IC_{0.95}(\mathbb{V}[\hat{X}_{t+1}]) = \left[ \hat{X}_{t+1} \pm 1.96*\sigma \right]
 $$
 
 $$
-IC_{0.95}(\mathbb{V}[\hat{X}_{t+2}]) = \left[ \hat{X}_{t+2} \pm 1.96\frac{\sqrt{\sigma}}{\sqrt{(1+\hat{ar}_{1})^2 + 1}} \right]
+IC_{0.95}(\mathbb{V}[\hat{X}_{t+2}]) = \left[ \hat{X}_{t+2} \pm \frac{1.96*\sigma}{\sqrt{(1+\hat{ar}_{1})^2 + 1}} \right]
 $$
 
 Dans le cas d'un $AR(11)$, ces formules se complexifient dramatiquement lorsqu'on allonge l'horizon de prédiction. On devrait obtenir le produit d'un polynôme $P$ des coefficients du modèle avec un bruit, permettant de se ramener à une loi normale centrer réduite pour déterminer les bornes de l'intervalle de confiance. Nous avons simplifié en calculant la variance de chaque prédiction de manière itérative, en reprenant la variance des prédictions précédentes, selon la formule suivante (où $ar_0 = 1$ et où les termes certains disparaissent lorsque l'horizon $h$ est inférieur à 11) :
