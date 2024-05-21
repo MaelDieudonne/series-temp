@@ -346,17 +346,17 @@ $$
 \hat{\mathbb{V}}[\hat{X}_{t+h}] = (ar_0+\hat{ar}_{1})^2*\hat{\mathbb{V}}[\hat{X}_{t+h-1}] + (\hat{ar}_{1}+\hat{ar}_{2})^2*\hat{\mathbb{V}}[\hat{X}_{t+h-2}] + \cdots + (\hat{ar}_{10}+\hat{ar}_{11})^2*\hat{\mathbb{V}}[\hat{X}_{t+h-11}] + \mathbb{V}[\varepsilon_t]
 $$
 
-Nous avons également supposé que $\hat{\mathbb{V}}[\hat{X}_{t+h}]$ suit une loi normale centrée de manière à déterminer la région de confiance de niveau $\alpha$ :
+Comme $\hat{\mathbb{V}}[\hat{X}_{t+h}]$ suit une loi normale centrée en tant que produit de $\varepsilon_t$ par un polynôme déterminé, la région de confiance de niveau $\alpha$ vérifie :
 
 $$
 IC_{0.95}(\mathbb{V}[\hat{X}_{t+h}]) = \left[ \hat{X}_{t+h} \pm 1.96\sqrt{\hat{\mathbb{V}}[\hat{X}_{t+h}]} \right]
 $$
 
-Ces simplifications permettent d'étendre l'horizon de prédiction au-delà de 2. Elle sont justifiées dans la mesure où $P$ n'est pas très différent de 1. On vérifie en particulier :
+Ces simplifications permettent d'étendre l'horizon de prédiction au-delà de 2. Elles consistent à négliger la dépendance entre les prédictions de différents horizons, ce qui contribue à amplifier la variance estimée. Elles sont justifiées dans la mesure où $P$ n'est pas très différent de 1. On vérifie en particulier :
 
 $$
-P(1) = 1 \\
-\hat{ar}_{1} = -0,61193077 \Longrightarrow P(2) = (1+\hat{ar}_{1})^2 + 1 \approx 1,15
+ar_0=1 \Rightarrow P(1) = 1 \\
+\hat{ar}_{1} = -0,61193077 \Rightarrow P(2) = (ar_0+\hat{ar}_{1})^2 + 1 \approx 1,15 \Rightarrow \frac{1}{\sqrt{P(2)}} \approx 0,93
 $$
 
 ## 3. Représentation graphique
@@ -455,7 +455,7 @@ ggplot(data = subset_data) +
     legend.position = "bottom")
 ```
 
-On procède à une vérification avec la fonction forecast du package éponyme : on retrouve les mêmes coefficients, mais des intervalles de confiance plus étroits. Ceci montre que les simplifications précédentes n'étaient pas déraisonnables, puisqu'elles aboutissent à des prédictions plus conservatrices.
+On procède à une vérification avec la fonction forecast du package éponyme : on retrouve les mêmes coefficients, mais des intervalles de confiance de plus en plus étroits, surtout pour $h>2$. Ceci confirme le caractère conservateur de nos hypothèses de calcul, dont l'effet est imperceptible pour $h\le2$.
 
 ```{r}
 # On supprimer la fonction précédemment définie et on génère à nouveau le modèle.
@@ -469,6 +469,13 @@ forecast$lower <- exp(forecast$lower)
 forecast$upper <- exp(forecast$upper)
 
 print(forecast)
+
+# On compare la laergeur des IC obtenus.
+forecasted_var <- cbind(
+  data$values[!is.na(data$var)] - data$CIlow[!is.na(data$var)],
+  as.data.frame(coredata(forecast$mean-forecast$lower)))
+colnames(forecasted_var) <- c("own", "forecast package")
+forecasted_var
 ```
 
 ## 4. Question ouverte
