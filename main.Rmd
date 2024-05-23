@@ -88,7 +88,7 @@ On commence par une transformation logarithmique pour corriger l'hétéroscédas
 ```{r}
 log_series <- log(raw_series)
 
-autoplot(decompose(log_series), xlab = "") +
+autoplot(decompose(log_series), xlab = "") + 
   labs(title = name, subtitle = "Série log-transformée – décomposition") +
   theme_minimal() +
   theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
@@ -137,7 +137,7 @@ Une autre explication serait la persistance d'une légère dérive ou tendance m
 On admet alors, devant ces résultats, que la série transformée est stationnaire (d'autant que les résidus semblent bien distribués normalement).
 
 ```{r}
-checkresiduals(diff_series, plot = TRUE)
+residuals <- checkresiduals(diff_series, plot = TRUE)
 ```
 
 ## 3. Comparaison de la série initiale et de la série transformée
@@ -300,13 +300,13 @@ auto.arima(log_series, seasonal = FALSE, trace = TRUE)
 
 ## 1. Hypothèses
 
-Les calculs précédents requièrent plusieurs hypothèses.
+La détermination des intervalles de confiance autour des valeurs prédites requiert plusieurs hypothèses.
 
 -   La structure du modèle est parfaitement connue.
 
 -   Les coefficients estimés sont les vrais coefficients du modèle. Cette hypothèse permet de négliger l'incertitude qui les entoure, pour considérer seulement la variance des résidus et des prévisions précédentes lors du calcul de l'écart-type. C'est une pratique habituelle, car la variance des coefficients estimés est généralement très inférieure à celle des résidus. Cela n'est pas le cas ici, mais revenir sur cette hypothèse complexifierait de manière déraisonnable les calculs...
 
--   Les résidus sont gaussiens.
+-   Les résidus sont gaussiens (et de variance non-nulle, sans quoi les prévisions deviennent certaines).
 
 ```{r}
 # On constate ici que la variance des résidus et des coefficients estimés sont du même ordre de grandeur.
